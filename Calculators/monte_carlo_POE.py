@@ -30,8 +30,72 @@ class MonteCarlo:
     def get_data(self, filepath):
         CSV_FILE_NAME = abspath(join(dirname(__file__), filepath))
         self.df = pd.read_csv(CSV_FILE_NAME, header=0)
+        self.process_dates()
         return None
     
+    def process_dates(self):
+        self.df['ILIRStartDate'] = pd.to_datetime(self.df['ILIRStartDate']).dt.date
+        self.df['install_date'] = pd.to_datetime(self.df['install_date']).dt.date
+
+    # Need to refine this section so that it can create a template spreadsheet to input data into
+    def build_template(self):
+        
+        cols = ['line',
+                'FeatureID',
+                'vendor',
+                'tool',
+                'ILIRStartDate',
+                'status',
+                'type',
+                'ILIFSurfaceInd',
+                'chainage_m',
+                'depth_fraction',
+                'length_mm',
+                'width_mm',
+                'vendor_cgr_mmpyr',
+                'vendor_cgr_sd',
+                'OD_inch',
+                'WT_mm',
+                'grade_MPa',
+                'toughness_J',
+                'install_date',
+                'coating_type',
+                'incubation_yrs',
+                'MAOP_kPa']
+
+        data = [[None]] * len(cols)
+
+        temp_dict = {x:y for x,y in zip(cols,data)}
+        temp_df = pd.DataFrame(temp_dict)
+        temp_df.to_csv(abspath(join(dirname(__file__), 'inputs_POE_template.csv')), index=False)
+        return None
+
+    def build_df(self, od_i, wt_mm, grade_mpa, maop_kpa, installdate, ILIdate, pdf, lengthmm, create=True, **kwargs):
+            
+        if create:
+            temp_dict = dict(OD_inch=[od_i],
+                            WT_mm=[wt_mm],
+                            grade_MPa=[grade_mpa],
+                            install_date=[installdate],
+                            MAOP_kPa=[maop_kpa],
+                            ILIRStartDate=[ILIdate],
+                            depth_fraction=[pdf],
+                            length_mm=[lengthmm]
+                            )
+                
+            return pd.DataFrame(temp_dict)
+        else:
+            temp_df = pd.DataFrame(dict(OD_inch=[od_i],
+                            WT_mm=[wt_mm],
+                            grade_MPa=[grade_mpa],
+                            install_date=[installdate],
+                            MAOP_kPa=[maop_kpa],
+                            ILIRStartDate=[ILIdate],
+                            depth_fraction=[pdf],
+                            length_mm=[lengthmm]
+                            ))
+            return kwargs['df'].append(temp_df)
+
     def set_iterations(self, iterations):
         self.iterations = iterations
         return None
@@ -80,16 +144,26 @@ class MonteCarlo:
         # Number of features is equal to number of rows in csv file
         i = df.shape[0]
 
-        # Pipe properties
-        OD, WTm, Sm, Tm, OPm, Inst = unpacker.pipe_prop(df)
+        OD = df['OD_inch'].values
+        WTm = df['WT_mm'].values
+        Sm = df['grade_MPa'].values
+        df['toughness_J'] = df['toughness_J'].fillna(10)
+        Tm = df['toughness_J'].values
+        Inst = df['install_date']
 
-        # Feature properties
-        fPDP, fL_measured, fW_measured, fstatus, ftype, fchainage = unpacker.feature_dim(df)
+        OPm = df['MAOP_kPa'].values
 
-        fids = df['InlineInspectionFeatureId'].values
+        fPDP = df['depth_fraction'].values
+        fL_measured = df['length_mm'].values
+        fW_measured = df['width_mm'].values
+        fchainage = df['chainage_m'].values
+        fstatus = df['status'].values
+        ftype = df['type'].values
+        fids = df['FeatureID'].values
 
-        # Inline inspection range properties
-        Insp, vendor, tool = unpacker.range_prop(df)
+        vendor = df['vendor'].values
+        tool = df['tool'].values
+        Insp = df['ILIRStartDate']
 
         time_delta = ((self.now - Insp).dt.days.values) / 365.25
 
@@ -131,7 +205,8 @@ class MonteCarlo:
         # ----------------Need a tiler function that is dynamic (e.g., take in multiply inputs, and spit out multiple outputs)
         # non-distributed variables
 
-        OD, OP = distributer.tiler(OD, OP, tuple_size=(n, 1))
+        OD = np.tile(OD, (n, 1)) 
+        OP = np.tile(OP, (n, 1))
 
         # ------------------Need a randomized function that is dynamic (see comment above)
         np.random.seed()
@@ -207,7 +282,7 @@ class MonteCarlo:
 
         ##    return_list=[fail_count, np.size(fails, axis=0), rupture_count, leak_count, 0]  #No NaN
 
-        return_dict = {"InlineInspectionFeatureId":fids,
+        return_dict = {"FeatureID":fids,
                     "fail_count": fail_count,
                     "iterations": np.size(fails, axis=0),
                     "rupture_count": rupture_count,
@@ -225,16 +300,26 @@ class MonteCarlo:
         #Number of features is equal to number of rows in csv file
         i = df.shape[0]
 
-        #Pipe properties
-        OD, WTm, Sm, Tm, OPm, Inst = unpacker.pipe_prop(df)
+        OD = df['OD_inch'].values
+        WTm = df['WT_mm'].values
+        Sm = df['grade_MPa'].values
+        df['toughness_J'] = df['toughness_J'].fillna(10)
+        Tm = df['toughness_J'].values
+        Inst = df['install_date']
 
-        #Feature properties
-        cPDP, cL_measured, cW_measured, cstatus, ctype, cchainage = unpacker.feature_dim(df)
+        OPm = df['MAOP_kPa'].values
 
-        cids = df['InlineInspectionCrackAnomalyId'].values
+        cPDP = df['depth_fraction'].values
+        cL_measured = df['length_mm'].values
+        cW_measured = df['width_mm'].values
+        cchainage = df['chainage_m'].values
+        cstatus = df['status'].values
+        ctype = df['type'].values
+        cids = df['FeatureID'].values
 
-        #Inline inspection range properties
-        Insp, vendor, tool = unpacker.range_prop(df)
+        vendor = df['vendor'].values
+        tool = df['tool'].values
+        Insp = df['ILIRStartDate']
 
         time_delta = ((self.now-Insp).dt.days.values)/365.25
 
@@ -284,7 +369,9 @@ class MonteCarlo:
         # tool_L = np.where(vendor=="Rosen",defectTol["Rosen"]["sdL"],defectTol["PII"]["sdL"])
 
         #non-distributed variables
-        OP, T = distributer.tiler(OP, T, tuple_size=(n, 1))
+        
+        OP = np.tile(OP, (n, 1))
+        T = np.tile(T, (n, 1))
 
         #distributed variables
         np.random.seed()
@@ -323,7 +410,7 @@ class MonteCarlo:
 
         fails, fail_count = simpoe.cracks.crackLimitStates.ls_crack_tot(ruptures, leaks, bulk=True)
 
-        return_dict = {"InlineInspectionCrackAnomalyId":cids,
+        return_dict = {"FeatureID":cids,
                     "fail_count":fail_count,
                         "iterations":np.size(fails, axis=0),
                         "rupture_count":rupture_count,
@@ -341,16 +428,26 @@ class MonteCarlo:
         #Number of features is equal to number of rows in csv file
         i = df.shape[0]
 
-        #Pipe properties
-        OD, WTm, Sm, Tm, OPm, Inst = unpacker.pipe_prop(df)
+        OD = df['OD_inch'].values
+        WTm = df['WT_mm'].values
+        Sm = df['grade_MPa'].values
+        df['toughness_J'] = df['toughness_J'].fillna(10)
+        Tm = df['toughness_J'].values
+        Inst = df['install_date']
 
-        #Feature properties
-        cPDP, cL_measured, cW_measured, cstatus, ctype, cchainage = unpacker.feature_dim(df)
+        OPm = df['MAOP_kPa'].values
 
-        cids = df['InlineInspectionCrackAnomalyId'].values
+        cPDP = df['depth_fraction'].values
+        cL_measured = df['length_mm'].values
+        cW_measured = df['width_mm'].values
+        cchainage = df['chainage_m'].values
+        cstatus = df['status'].values
+        ctype = df['type'].values
+        cids = df['FeatureID'].values
 
-        #Inline inspection range properties
-        Insp, vendor, tool = unpacker.range_prop(df)
+        vendor = df['vendor'].values
+        tool = df['tool'].values
+        Insp = df['ILIRStartDate']
 
         time_delta = ((self.now-Insp).dt.days.values)/365.25
 
@@ -422,8 +519,8 @@ class MonteCarlo:
         ####-----------------------------------------------
         
         #non-distributed variables
-
-        OP, T = distributer.tiler(OP, T, tuple_size=(n, 1))
+        OP = np.tile(OP, (n, 1))
+        T = np.tile(T, (n, 1))
 
         #distributed variables
         np.random.seed()
@@ -461,7 +558,7 @@ class MonteCarlo:
 
         fails, fail_count = simpoe.cracks.crackLimitStates.ls_crack_tot(ruptures, leaks, bulk=True)
 
-        return_dict = {"InlineInspectionCrackAnomalyId":cids,
+        return_dict = {"FeatureID":cids,
                     "fail_count":fail_count,
                         "iterations":np.size(fails, axis=0),
                         "rupture_count":rupture_count,
@@ -479,8 +576,14 @@ class MonteCarlo:
         # Number of features is equal to number of rows in csv file
         i = df.shape[0]
 
-        # Pipe properties
-        OD, WTm, Sm, Tm, OPm, Inst = unpacker.pipe_prop(df)
+        OD = df['OD_inch'].values
+        WTm = df['WT_mm'].values
+        Sm = df['grade_MPa'].values
+        df['toughness_J'] = df['toughness_J'].fillna(10)
+        Tm = df['toughness_J'].values
+        Inst = df['install_date']
+
+        OPm = df['MAOP_kPa'].values
 
         # outside diameter in mm
         ODm = OD * 25.4
@@ -497,16 +600,21 @@ class MonteCarlo:
 
         cycles = 24
 
-        # Feature properties
-        dPDP, dL_measured, dW_measured, dstatus, dtype, dchainage = unpacker.feature_dim(df)
-
-        dids = df['InlineInspectionNonCrsnDfctId'].values
+        dPDP = df['depth_fraction'].values
+        dL_measured = df['length_mm'].values
+        dW_measured = df['width_mm'].values
+        dchainage = df['chainage_m'].values
+        dstatus = df['status'].values
+        dtype = df['type'].values
+        dids = df['FeatureID'].values
 
         # gouge depth pct
         gPDP = 0
 
         # Inline inspection range properties
-        Insp, vendor, tool = unpacker.range_prop(df)
+        vendor = df['vendor'].values
+        tool = df['tool'].values
+        Insp = df['ILIRStartDate']
 
         time_delta = (self.now - Inst).dt.days.values / 365.25
         
@@ -581,7 +689,7 @@ class MonteCarlo:
 
         fails, fail_count = simpoe.dents.dentLimitStates.ls_dent_fail(NF, n_cycles, bulk=True)
 
-        return_dict = {"InlineInspectionNonCrsnDfctId":dids,
+        return_dict = {"FeatureID":dids,
                     "fail_count": fail_count,
                     "iterations": np.size(fails, axis=0),
                     "NPS_Frac": dPDP,
@@ -612,8 +720,9 @@ class MonteCarlo:
 
 
 if __name__ == '__main__':
-    SCCRun = MonteCarlo('SCC')
-    SCCRun.get_data('crack_poe_inputs.csv')
-    SCCRun.set_iterations(1_00)
-    SCCRun.run()
- 
+    scc = MonteCarlo('SCC')
+    scc.get_data('sample_of_inputs.csv')
+    scc.set_iterations(1_00)
+    scc.run()
+    # for i,x in enumerate(scc.df.columns):
+    #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
