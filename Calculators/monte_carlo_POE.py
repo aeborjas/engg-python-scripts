@@ -103,8 +103,8 @@ class MonteCarlo:
     def index_marks(self, nrows, chunk_size):
         return range(chunk_size, np.ceil(nrows / chunk_size).astype(int) * chunk_size, chunk_size)
 
-    def split(self, chunk_size):
-        indices = index_marks(self.df.shape[0], chunk_size)
+    def split_df(self, chunk_size):
+        indices = self.index_marks(self.df.shape[0], chunk_size)
         return np.split(self.df, indices)
 
     def set_model(self):
@@ -115,18 +115,18 @@ class MonteCarlo:
         self.model = model_dict[self.model_type]
         return None 
 
-    def run(self, split=False):
+    def run(self, split_calculation=False, buffer_size=1000):
         t1 = time.time()
 
         if hasattr(self,'result'):
             del self.result
 
-        if not(split):
+        if not(split_calculation):
             self.result, self.qc = self.model(self.df,self.iterations)
         else:
-            chunks = split(self.df, 100)
-            self.result = [self.model(x,iter)[0] for x in chunks]
+            self.result = [self.model(x,self.iterations)[0] for x in self.split_df(buffer_size)]
             self.result = pd.concat(self.result)
+            self.qc = None
 
         self.result["POE"] = self.result["fail_count"] / self.result["iterations"]
         self.result["POE_l"] = self.result["leak_count"] / self.result["iterations"]
@@ -725,7 +725,7 @@ class MonteCarlo:
 if __name__ == '__main__':
     scc = MonteCarlo('SCC')
     scc.get_data('sample_of_inputs.csv')
-    scc.set_iterations(1_00)
-    scc.run()
+    scc.set_iterations(1_000_0)
+    scc.run(split_calculation=True, buffer_size=500)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
