@@ -118,6 +118,9 @@ class MonteCarlo:
     def run(self, split=False):
         t1 = time.time()
 
+        if hasattr(self,'result'):
+            del self.result
+
         if not(split):
             self.result, self.qc = self.model(self.df,self.iterations)
         else:
@@ -137,7 +140,7 @@ class MonteCarlo:
         print(f"Calculation took {time.time()-t1:.4f} seconds.")
         return self.result, self.qc
 
-    def merge_results(self, key):
+    def merge_result(self, key):
         return self.result.merge(self.df, on=key)
 
     def corrpoe(self, df, n):
