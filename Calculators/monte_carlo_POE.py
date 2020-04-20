@@ -8,9 +8,6 @@ import simpoe.corrosion.failureStress, simpoe.corrosion.corrLimitStates
 import simpoe.dents.failureCycles, simpoe.dents.dentLimitStates
 from simpoe import unpacker, model_constants, distributer, cgr
 
-now = datetime.date.today()
-start = time.time()
-
 import importlib.util
 spec = importlib.util.spec_from_file_location("useful_func", r"C:\Users\armando_borjas\Documents\Python\useful_func.py")
 useful_func = importlib.util.module_from_spec(spec)
@@ -23,7 +20,12 @@ class MonteCarlo:
     def __init__(self, model):
         self.model_type = model
         self.set_model()
+        self.set_config()
         return None
+
+    def set_config(self):
+        self.now = datetime.date.today()
+        pass
 
     def get_data(self, filepath):
         CSV_FILE_NAME = abspath(join(dirname(__file__), filepath))
@@ -89,7 +91,7 @@ class MonteCarlo:
         # Inline inspection range properties
         Insp, vendor, tool = unpacker.range_prop(df)
 
-        time_delta = ((now - Insp).dt.days.values) / 365.25
+        time_delta = ((self.now - Insp).dt.days.values) / 365.25
 
         # Growth Rate mechanism
         mechanism = "weibull"
@@ -234,7 +236,7 @@ class MonteCarlo:
         #Inline inspection range properties
         Insp, vendor, tool = unpacker.range_prop(df)
 
-        time_delta = ((now-Insp).dt.days.values)/365.25
+        time_delta = ((self.now-Insp).dt.days.values)/365.25
 
         #Growth Rate mechanism
         shape, scale = 2.55, 0.10
@@ -350,7 +352,7 @@ class MonteCarlo:
         #Inline inspection range properties
         Insp, vendor, tool = unpacker.range_prop(df)
 
-        time_delta = ((now-Insp).dt.days.values)/365.25
+        time_delta = ((self.now-Insp).dt.days.values)/365.25
 
         #Growth Rate mechanism
         # shape, scale = 2.0, 0.26
@@ -506,7 +508,7 @@ class MonteCarlo:
         # Inline inspection range properties
         Insp, vendor, tool = unpacker.range_prop(df)
 
-        time_delta = (now - Inst).dt.days.values / 365.25
+        time_delta = (self.now - Inst).dt.days.values / 365.25
         
         # Sensitivity Factor
         sf = 1
@@ -612,6 +614,6 @@ class MonteCarlo:
 if __name__ == '__main__':
     SCCRun = MonteCarlo('SCC')
     SCCRun.get_data('crack_poe_inputs.csv')
-    SCCRun.set_iterations(1_000_0)
+    SCCRun.set_iterations(1_00)
     SCCRun.run()
  
