@@ -16,15 +16,17 @@ spec.loader.exec_module(useful_func)
 pd.set_option('display.max_columns',500)
 
 class MonteCarlo:
-
-    def __init__(self, model):
+    def __init__(self, model, run_date=None):
         self.model_type = model
         self.set_model()
-        self.set_config()
+        self.set_config(run_date)
         return None
 
-    def set_config(self):
-        self.now = datetime.date.today()
+    def set_config(self,run_date=None):
+        if run_date == None:
+            self.now = datetime.date.today()
+        else:
+            self.now = datetime.datetime.strptime(run_date, '%Y-%m-%d').date()
         pass
 
     def get_data(self, filepath):
@@ -138,7 +140,7 @@ class MonteCarlo:
         print(f"{self.model_type} POE Simulation")
         print("Aggregated POE for these features is {}.\n".format(agg_POE))
         print(f"Calculation took {time.time()-t1:.4f} seconds.")
-        return self.result, self.qc
+        return None
 
     def merge_result(self, key):
         return self.result.merge(self.df, on=key)
@@ -725,7 +727,7 @@ class MonteCarlo:
 if __name__ == '__main__':
     scc = MonteCarlo('SCC')
     scc.get_data('sample_of_inputs.csv')
-    scc.set_iterations(1_000_0)
-    scc.run(split_calculation=True, buffer_size=500)
+    scc.set_iterations(1_000)
+    scc.run(split_calculation=True, buffer_size=10)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
