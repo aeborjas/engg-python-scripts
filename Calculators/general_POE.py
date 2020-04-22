@@ -487,11 +487,11 @@ class MonteCarlo:
 
         #tool tolerances
         defectTol = {
-            "Rosen": {
+            "RosenF": {
                 "sdPDP": 0.78,   # in mm (0.78)
                 "sdL": 7.80      #in mm (7.80)
                 },
-            "RosenF": {
+            "Rosen": {
                 "sdPDP":sdDepthTool*WTm, #in mm
                 "sdL":7.80  #in mm
                 },
@@ -727,7 +727,7 @@ class MonteCarlo:
 if __name__ == '__main__':
     scc = MonteCarlo('SCC')
     scc.get_data('sample_of_inputs.csv')
-    scc.set_iterations(1_000)
-    scc.run(split_calculation=True, buffer_size=10)
+    scc.set_iterations(1_000_0)
+    scc.run(split_calculation=True, buffer_size=1500)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
