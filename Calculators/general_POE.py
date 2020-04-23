@@ -327,6 +327,7 @@ class MonteCarlo:
         Insp = df['ILIRStartDate']
 
         time_delta = ((self.now-Insp).dt.days.values)/365.25
+        ILI_age = ((Insp-Inst).dt.days.values)/365.25
 
         #Growth Rate mechanism
         shape, scale = 2.55, 0.10
@@ -339,14 +340,14 @@ class MonteCarlo:
         #Crack fracture area in sq. inches
         fa = model_constants.const['fa']
 
-        meanOD = model_constants.pipe_specs['od']['mean']
-        sdOD = model_constants.pipe_specs['od']['sd']
-        meanWT = model_constants.pipe_specs['wt']['mean']
-        sdWT = model_constants.pipe_specs['wt']['sd']
-        meanS = model_constants.pipe_specs['s']['mean']
-        sdS = model_constants.pipe_specs['s']['sd']
-        meanE = model_constants.pipe_specs['youngs']['mean']
-        sdE = model_constants.pipe_specs['youngs']['sd']
+        meanOD = 1.0
+        sdOD = 0.0006
+        meanWT = 1.01
+        sdWT = 0.01
+        meanS = 1.1
+        sdS = 0.035
+        meanE = 1.0
+        sdE = 0.04
 
         #Unit conversion to US units
         WT = WTm/25.4
@@ -391,15 +392,13 @@ class MonteCarlo:
 
         #crack length in inches
         cL_run = np.maximum(1, norm.ppf(cL_n_5, loc=cL_measured * 1.0, scale=tool_L)) / 25.4
-        #HALD LIFE GROWTH RATE DOESNT WORK. NEED TO FIX.
-        # cL_GR = cgr.half_life(cL_run, Inst, Insp)
-        cL = cL_run +  0     #not growing features
+        # cL_GR = cL_run/ILI_age
+        cL = cL_run +  0*time_delta
 
         #Crack detpth in inches
         cD_run = np.maximum(0, norm.ppf(cD_n_6, loc=cPDP*WTm*1.0, scale=tool_D))/25.4
-        #HALD LIFE GROWTH RATE DOESNT WORK. NEED TO FIX.
-        # cD_GR = cgr.half_life(cD_run, Inst, Insp)
-        cD = cD_run +  0     #not growing features
+        cD_GR = cD_run/ILI_age
+        cD = cD_run +  cD_GR*time_delta
 
         failStress = simpoe.cracks.failureStress.modified_lnsec(ODd, WTd, Sdist, T, Ydist, cL, cD, units="US")
 
@@ -468,14 +467,14 @@ class MonteCarlo:
         #Crack fracture area in sq. inches
         fa = model_constants.const['fa']
 
-        meanOD = model_constants.pipe_specs['od']['mean']
-        sdOD = model_constants.pipe_specs['od']['sd']
-        meanWT = model_constants.pipe_specs['wt']['mean']
-        sdWT = model_constants.pipe_specs['wt']['sd']
-        meanS = model_constants.pipe_specs['s']['mean']
-        sdS = model_constants.pipe_specs['s']['sd']
-        meanE = model_constants.pipe_specs['youngs']['mean']
-        sdE = model_constants.pipe_specs['youngs']['sd']
+        meanOD = 1.0
+        sdOD = 0.0006
+        meanWT = 1.01
+        sdWT = 0.01
+        meanS = 1.10
+        sdS = 0.035
+        meanE = 1.0
+        sdE = 0.04
 
         #Unit conversion to US units
         WT = WTm/25.4
