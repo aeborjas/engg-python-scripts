@@ -625,12 +625,12 @@ class MonteCarlo:
         # Sensitivity Factor
         sf = 1
 
-        meanOD = model_constants.pipe_specs['od']['mean']
-        sdOD = model_constants.pipe_specs['od']['sd']
-        meanWT = model_constants.pipe_specs['wt']['mean']
-        sdWT = model_constants.pipe_specs['wt']['sd']
-        meanUTS = model_constants.pipe_specs['uts']['mean']
-        sdUTS = model_constants.pipe_specs['uts']['sd']
+        meanOD = 1.0
+        sdOD = 0.0006
+        meanWT = 1.01
+        sdWT = 0.01
+        meanUTS = 1.12
+        sdUTS = 0.035
 
         NPS = np.floor(OD)
         rosensd = np.where(NPS < 18, 0.005, np.where(NPS < 30, 0.003, np.where(NPS < 40, 0.002, 0.0015)))

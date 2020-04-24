@@ -325,7 +325,7 @@ namespace Dynamic.MonteCarloSimulation.MechanicalDamageResident
 
                     // Dent Radius Coefficient
                     double DentRC;
-                    if (DentRadius > Wt_p)
+                    if (DentRadius >= 5*Wt_p)
                     {
                         DentRC = 2;
                     }
