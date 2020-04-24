@@ -23,6 +23,11 @@ class MonteCarlo:
         return None
 
     def set_config(self,run_date=None):
+        """Allows to se the monte carlo run date to something other than current datetime
+
+        Keyword Arguments:
+            run_date {string} -- the date in YYYY-MM-DD format to set (default: {None})
+        """
         if run_date == None:
             self.now = datetime.date.today()
         else:
@@ -30,18 +35,32 @@ class MonteCarlo:
         pass
 
     def get_data(self, filepath):
+        """searches for a CSV file in the same folder of this file and loads it to a pandas dataframe.
+
+        Arguments:
+            filepath {string} -- name of the CSV file containing the data
+
+        Returns:
+            None -- 
+        """        
         CSV_FILE_NAME = abspath(join(dirname(__file__), filepath))
         self.df = pd.read_csv(CSV_FILE_NAME, header=0)
         self.process_dates()
         return None
     
     def process_dates(self):
+        """converts specific fields in the input data to pandas datetime objects
+        """        
         self.df['ILIRStartDate'] = pd.to_datetime(self.df['ILIRStartDate']).dt.date
         self.df['install_date'] = pd.to_datetime(self.df['install_date']).dt.date
 
     # Need to refine this section so that it can create a template spreadsheet to input data into
     def build_template(self):
-        
+        """exports a CSV file with column templates signaling all inputs possible to the POE calculation
+
+        Returns:
+            None -- 
+        """        
         cols = ['line',
                 'FeatureID',
                 'vendor',
@@ -63,7 +82,10 @@ class MonteCarlo:
                 'install_date',
                 'coating_type',
                 'incubation_yrs',
-                'MAOP_kPa']
+                'MAOP_kPa',
+                'PMax_kPa',
+                'PMin_kPa',
+                'AESC']
 
         data = [[None]] * len(cols)
 
@@ -72,8 +94,28 @@ class MonteCarlo:
         temp_df.to_csv(abspath(join(dirname(__file__), 'inputs_POE_template.csv')), index=False)
         return None
 
-    def build_df(self, od_i, wt_mm, grade_mpa, maop_kpa, installdate, ILIdate, pdf, lengthmm, create=True, **kwargs):
-            
+    def build_df(self, od_i, wt_mm, grade_mpa, maop_kpa, installdate, ILIdate, pdf, lengthmm, pmax_kpa, pmin_kpa, aesc, create=True, **kwargs):
+        """Allows user to build a dataframe right in the prompt to be used as the input data. If the create flaf is set to False,
+            then a df keyword can be specified, and the entry is appended to the dataframe df
+        Arguments:
+            od_i {float} -- outside diameter in inches
+            wt_mm {float} -- wall thickness in mm
+            grade_mpa {float} -- grade in MPa
+            maop_kpa {float} -- maximum allowable operating pressure in kPa
+            installdate {datetime.date} -- installation date
+            ILIdate {datetime.date} -- ILI survey date
+            pdf {float} -- peak depth fraction
+            lengthmm {float} -- length in mm
+            pmax_kpa {float} -- maximum pressure in stress cycle in kPa
+            pmin_kpa {float} -- minimum pressure in stress cycle in kPa
+            aesc {float} -- annual equivalent stress cycles
+
+        Keyword Arguments:
+            create {bool} -- setting this to True will return a new dataframe, setting it to False will append to a dataframe kwarg 'df' (default: {True})
+
+        Returns:
+            [pandas.DataFrame] -- dataframe containing the entry
+        """        
         if create:
             temp_dict = dict(OD_inch=[od_i],
                             WT_mm=[wt_mm],
@@ -82,7 +124,10 @@ class MonteCarlo:
                             MAOP_kPa=[maop_kpa],
                             ILIRStartDate=[ILIdate],
                             depth_fraction=[pdf],
-                            length_mm=[lengthmm]
+                            length_mm=[lengthmm],
+                            PMax_kPa=[pmax_kpa],
+                            PMin_kPa=[pmin_kpa],
+                            AESC=[aesc]
                             )
                 
             return pd.DataFrame(temp_dict)
@@ -94,11 +139,22 @@ class MonteCarlo:
                             MAOP_kPa=[maop_kpa],
                             ILIRStartDate=[ILIdate],
                             depth_fraction=[pdf],
-                            length_mm=[lengthmm]
+                            length_mm=[lengthmm],
+                            PMax_kPa=[pmax_kpa],
+                            PMin_kPa=[pmin_kpa],
+                            AESC=[aesc]
                             ))
             return kwargs['df'].append(temp_df)
 
     def set_iterations(self, iterations):
+        """Sets the number of iterations to be considered in monte carlo assessment
+
+        Arguments:
+            iterations {float} -- Number of iterations desired
+
+        Returns:
+            None -- 
+        """        
         self.iterations = iterations
         return None
 
@@ -110,14 +166,29 @@ class MonteCarlo:
         return np.split(self.df, indices)
 
     def set_model(self):
+        """method used to specify which model to be ran
+
+        Returns:
+            None -- 
+        """        
         model_dict = {'CORR':self.corrpoe,
                         'SCC':self.sccpoe,
                         'MD':self.mdpoe,
-                        'RD':self.rdpoe}
+                        'RD':self.rdpoe,
+                        'CSCC':self.csccpoe}
         self.model = model_dict[self.model_type]
         return None 
 
     def run(self, split_calculation=False, buffer_size=1000):
+        """Method used to start the Monte Carlo run
+
+        Keyword Arguments:
+            split_calculation {bool} -- Set to true, the calculation will use the buffer_size to split the instance dataframe by that number (default: {False})
+            buffer_size {int} -- value to split the instance dataframe (default: {1000})
+
+        Returns:
+            None -- 
+        """        
         t1 = time.time()
 
         if hasattr(self,'result'):
@@ -146,9 +217,11 @@ class MonteCarlo:
         return self.result.merge(self.df, on=key)
 
     def corrpoe(self, df, n):
+
         # Number of features is equal to number of rows in csv file
         i = df.shape[0]
 
+        # Setting the inputs to the appropriate variables
         OD = df['OD_inch'].values
         WTm = df['WT_mm'].values
         Sm = df['grade_MPa'].values
@@ -175,10 +248,10 @@ class MonteCarlo:
         # Growth Rate mechanism
         mechanism = "weibull"
 
-        # CGA
-        CGR_CGA_MPY = 10  # MPY (mili inches per year)
+        # CGA # MPY (mili inches per year)
+        CGR_CGA_MPY = 10  
 
-        # weibull Distribution
+        # weibull Distribution parameters
         shape = 1.439
         scale = 0.1
 
@@ -190,12 +263,12 @@ class MonteCarlo:
         S = (Sm * 1000) / 6.89476
         OP = OPm / 6.89476
 
+        # statistics for the inputs
         meanWT = 1.01
         sdWT = 0.01
         meanS = 1.09
         sdS = 0.044
 
-        # ----------Maybe these tool tolerances can be a property of the range class? or perhaps a dictionary that I can store somewhere collecting information on numerous tool types.
         # tool tolerances
         defectTol = {
             "Rosen": {
@@ -207,19 +280,15 @@ class MonteCarlo:
         tool_D = np.where(vendor == "Rosen", defectTol["Rosen"]["sdPDP"], defectTol["Rosen"]["sdPDP"])
         tool_L = np.where(vendor == "Rosen", defectTol["Rosen"]["sdL"], defectTol["Rosen"]["sdL"])
 
-        # ----------------Need a tiler function that is dynamic (e.g., take in multiply inputs, and spit out multiple outputs)
         # non-distributed variables
-
         OD = np.tile(OD, (n, 1)) 
         OP = np.tile(OP, (n, 1))
 
-        # ------------------Need a randomized function that is dynamic (see comment above)
         np.random.seed()
 
         mE_n_1, WT_n_2, S_n_3, Y_n_4, fL_n_5, fD_n_6, fGR_n_7 = distributer.random_prob_gen(7, iterations=n, features=i)
 
         # distributed variables
-        ##    ODd = norm.ppf(OD_n_1, loc=OD*meanOD, scale=OD*sdOD)
         WTd = norm.ppf(WT_n_2, loc=WT * meanWT, scale=WT * sdWT)
         Sdist = norm.ppf(S_n_3, loc=S * meanS, scale=S * sdS)
 
@@ -575,6 +644,110 @@ class MonteCarlo:
 
         return return_df, qc_df
 
+    def csccpoe(self, df,n):
+        pivar = np.pi
+
+        i = df.shape[0]  
+        
+        OD = df['OD_inch'].values
+        WTm = df['WT_mm'].values
+
+        cPDP = df['depth_fraction'].values
+        cL_measured = df['width_mm'].values
+        cchainage = df['chainage_m'].values
+        cstatus = df['status'].values
+        ctype = df['type'].values
+        cids = df['FeatureID'].values
+
+
+        vendor = df['tool'].values
+        Insp = df['ILIRStartDate']
+
+        time_delta = ((now-Insp).dt.days.values)/365.25
+
+        # Unit conversion to metric
+        OD = OD*25.4
+        WT = WTm
+
+
+        meanOD = 1.0    #fraction of OD
+        sdOD = 0.0006   #fraction of OD
+        meanWT = 1.01   #fraction of WT
+        sdWT = 0.01     #fraction of WT
+
+        #fraction of WT
+        sdDepthTool = np.where(WTm<10,0.117,0.156)
+
+        #tool tolerances
+        defectTol = {
+            "RosenF": {
+                "sdPDP":0.78,   # in mm
+                "sdL":7.80      #in mm
+                },
+            "Rosen": {
+                "sdPDP":sdDepthTool*WTm, #in mm
+                "sdL":7.80  #in mm
+                },
+            "PII": {
+                "sdPDP": 0.31,  # in mm
+                "sdL":6.10      #in mm
+                }
+            }
+
+        tool_D = np.where(vendor=='Rosen', defectTol['Rosen']['sdPDP'],defectTol['PII']['sdPDP'])
+        tool_L = np.where(vendor=='Rosen', defectTol['Rosen']['sdL'],defectTol['PII']['sdL'])
+        
+        np.random.seed()
+        
+        OD_n_1 = np.random.rand(n,i)
+        WT_n_2 = np.random.rand(n,i)
+        cL_n_5 = np.random.rand(n,i)
+        cD_n_6 = np.random.rand(n,i)
+        cGR_n_7 =np.random.rand(n,i)
+        cGR_n_8 =np.random.rand(n,i)
+
+        #distributed variables metric
+        ODd = norm.ppf(OD_n_1, loc=OD*meanOD, scale=OD*sdOD)
+        WTd = norm.ppf(WT_n_2, loc=WT*meanWT, scale=WT*sdWT)
+
+        #Crack width in mm
+        cL_run = np.maximum(1, norm.ppf(cL_n_5, loc=cL_measured * 1.0, scale=tool_L))
+        cL_GR = 3.126402*np.power( -np.log(1-cGR_n_7) ,1/1.874228039)	#PMC from width distribution
+        cL = cL_run + cL_GR*(time_delta)
+
+        #Crack detpth in mm
+        cD_run = np.maximum(0, norm.ppf(cD_n_6, loc=cPDP*WTm*1.0, scale=tool_D))
+        cD_GR = 0.26*np.power( -np.log(1-cGR_n_8) ,1/2.0)	#Standard
+        cD = cD_run + cD_GR*(time_delta)
+
+        depth_thresh = 0.6
+        depth_fails = cD >= depth_thresh*WTd
+        depth_fails = depth_fails.astype(int)
+        
+        circ_thresh = 0.4
+        circ_thresh_depth = 0.4
+        circ_fails = (cL >= circ_thresh*pivar*ODd) & (cD >= circ_thresh_depth*WTd)
+        circ_fails = circ_fails.astype(int)
+
+        fails = np.maximum(depth_fails,circ_fails)
+        fails = fails.astype(int)
+
+        fail_count = np.sum(fails, axis=0)
+        depth_count = np.sum(depth_fails, axis=0)
+        circ_count = np.sum(circ_fails, axis=0)
+
+        return_dict = {"FeatureID":cids,
+                        "fail_count":fail_count,
+                        "iterations":np.size(fails, axis=0),
+                        'depth_count':depth_count,
+                        'circ_count':circ_count,
+                        "PDP_frac":cPDP,
+                        "clength":cL_measured}
+
+        return_df = pd.DataFrame(return_dict)
+
+        return return_df, None
+
     # RD WIP
     def rdpoe(self, df, n):
         # Number of features is equal to number of rows in csv file
@@ -588,6 +761,10 @@ class MonteCarlo:
         Inst = df['install_date']
 
         OPm = df['MAOP_kPa'].values
+        
+        MAXPm = df['PMax_kPa'].values
+        MINPm = df['PMin_kPa'].values
+        cycles = df['AESC'].values
 
         # outside diameter in mm
         ODm = OD * 25.4
@@ -596,13 +773,8 @@ class MonteCarlo:
         UTSm = model_constants.ultimate_determiner(Sm)
 
         # Operating pressure in kPa
-        MAXPm = 7375.85919407132
-        MINPm = 0
-
         MAXStr = (MAXPm * ODm) / (2000 * WTm)
         MINStr = (MINPm * ODm) / (2000 * WTm)
-
-        cycles = 24
 
         dPDP = df['depth_fraction'].values
         dL_measured = df['length_mm'].values
