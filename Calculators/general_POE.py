@@ -190,10 +190,10 @@ class MonteCarlo:
         S = (Sm * 1000) / 6.89476
         OP = OPm / 6.89476
 
-        meanWT = model_constants.pipe_specs['wt']['mean']
-        sdWT = model_constants.pipe_specs['wt']['sd']
-        meanS = model_constants.pipe_specs['s']['mean']
-        sdS = model_constants.pipe_specs['s']['sd']
+        meanWT = 1.01
+        sdWT = 0.01
+        meanS = 1.09
+        sdS = 0.044
 
         # ----------Maybe these tool tolerances can be a property of the range class? or perhaps a dictionary that I can store somewhere collecting information on numerous tool types.
         # tool tolerances
