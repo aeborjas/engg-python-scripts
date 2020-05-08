@@ -248,10 +248,10 @@ class StatisticalPOE:
 
         # feature growth rate in inches per year
         fD_GR = np.where(np.isnan(CGA_mean_m), 
-                        fD_run/ILI_age,
-                        CGA_mean_m / 25.4)
+                        self.cgr_life_flag*fD_run/ILI_age,
+                        self.cgr_life_flag*CGA_mean_m / 25.4)
 
-        fD_mean = (fD_run + 0.0) + self.cgr_life_flag* fD_GR * time_delta
+        fD_mean = (fD_run + 0.0) +  fD_GR * time_delta
 
         # logic for computing the feature standard deviation
         fD_sd =  np.where(np.isnan(CGA_sd_m), 
@@ -1187,7 +1187,7 @@ if __name__ == '__main__':
     # scc.run(split_calculation=True, buffer_size=1500)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
-    corr = StatisticalPOE()
-    corr.set_config(cgr='half-life')
+    corr = StatisticalPOE(run_date='2019-12-31')
+
     corr.get_data('sample_of_inputs_stat.csv')
     corr.run()
