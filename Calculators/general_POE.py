@@ -14,6 +14,291 @@ useful_func = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(useful_func)
 
 pd.set_option('display.max_columns',500)
+class StatisticalPOE:
+    def __init__(self,  run_date=None):
+        self.set_config(run_date)
+        self.set_model()
+        return None
+
+    def set_config(self,run_date=None,cgr='full-life'):
+        """Allows to se the monte carlo run date to something other than current datetime
+
+        Keyword Arguments:
+            run_date {string} -- the date in YYYY-MM-DD format to set (default: {None})
+        """
+        if run_date == None:
+            self.now = datetime.date.today()
+        else:
+            self.now = datetime.datetime.strptime(run_date, '%Y-%m-%d').date()
+        
+        if cgr == 'full-life':
+            self.cgr_life_flag = 1.0
+        elif cgr == 'half-life':
+            self.cgr_life_flag = 2.0
+        else:
+            self.cgr_life_flag = 1.0
+
+        pass
+
+    def get_data(self, filepath):
+        """searches for a CSV file in the same folder of this file and loads it to a pandas dataframe.
+
+        Arguments:
+            filepath {string} -- name of the CSV file containing the data
+
+        Returns:
+            None -- 
+        """        
+        CSV_FILE_NAME = abspath(join(dirname(__file__), filepath))
+        self.df = pd.read_csv(CSV_FILE_NAME, header=0)
+        self.process_dates()
+        return None
+    
+    def process_dates(self):
+        """converts specific fields in the input data to pandas datetime objects
+        """        
+        self.df['ILIRStartDate'] = pd.to_datetime(self.df['ILIRStartDate']).dt.date
+        self.df['install_date'] = pd.to_datetime(self.df['install_date']).dt.date
+
+    # Need to refine this section so that it can create a template spreadsheet to input data into
+    def build_template(self):
+        """exports a CSV file with column templates signaling all inputs possible to the POE calculation
+
+        Returns:
+            None -- 
+        """        
+        cols = ['line',
+                'FeatureID',
+                'vendor',
+                'tool',
+                'ILIRStartDate',
+                'status',
+                'type',
+                'ILIFSurfaceInd',
+                'chainage_m',
+                'depth_fraction',
+                'length_mm',
+                'width_mm',
+                'vendor_cgr_mmpyr',
+                'vendor_cgr_sd',
+                'OD_inch',
+                'WT_mm',
+                'grade_MPa',
+                'toughness_J',
+                'install_date',
+                'coating_type',
+                'incubation_yrs',
+                'MAOP_kPa',
+                'PMax_kPa',
+                'PMin_kPa',
+                'AESC']
+
+        data = [[None]] * len(cols)
+
+        temp_dict = {x:y for x,y in zip(cols,data)}
+        temp_df = pd.DataFrame(temp_dict)
+        temp_df.to_csv(abspath(join(dirname(__file__), 'inputs_POE_template.csv')), index=False)
+        return None
+
+    def build_df(self, od_i, wt_mm, grade_mpa, maop_kpa, installdate, ILIdate, pdf, lengthmm, pmax_kpa, pmin_kpa, aesc, create=True, **kwargs):
+        """Allows user to build a dataframe right in the prompt to be used as the input data. If the create flaf is set to False,
+            then a df keyword can be specified, and the entry is appended to the dataframe df
+        Arguments:
+            od_i {float} -- outside diameter in inches
+            wt_mm {float} -- wall thickness in mm
+            grade_mpa {float} -- grade in MPa
+            maop_kpa {float} -- maximum allowable operating pressure in kPa
+            installdate {datetime.date} -- installation date
+            ILIdate {datetime.date} -- ILI survey date
+            pdf {float} -- peak depth fraction
+            lengthmm {float} -- length in mm
+            pmax_kpa {float} -- maximum pressure in stress cycle in kPa
+            pmin_kpa {float} -- minimum pressure in stress cycle in kPa
+            aesc {float} -- annual equivalent stress cycles
+
+        Keyword Arguments:
+            create {bool} -- setting this to True will return a new dataframe, setting it to False will append to a dataframe kwarg 'df' (default: {True})
+
+        Returns:
+            [pandas.DataFrame] -- dataframe containing the entry
+        """        
+        if create:
+            temp_dict = dict(OD_inch=[od_i],
+                            WT_mm=[wt_mm],
+                            grade_MPa=[grade_mpa],
+                            install_date=[installdate],
+                            MAOP_kPa=[maop_kpa],
+                            ILIRStartDate=[ILIdate],
+                            depth_fraction=[pdf],
+                            length_mm=[lengthmm],
+                            PMax_kPa=[pmax_kpa],
+                            PMin_kPa=[pmin_kpa],
+                            AESC=[aesc]
+                            )
+                
+            return pd.DataFrame(temp_dict)
+        else:
+            temp_df = pd.DataFrame(dict(OD_inch=[od_i],
+                            WT_mm=[wt_mm],
+                            grade_MPa=[grade_mpa],
+                            install_date=[installdate],
+                            MAOP_kPa=[maop_kpa],
+                            ILIRStartDate=[ILIdate],
+                            depth_fraction=[pdf],
+                            length_mm=[lengthmm],
+                            PMax_kPa=[pmax_kpa],
+                            PMin_kPa=[pmin_kpa],
+                            AESC=[aesc]
+                            ))
+            return kwargs['df'].append(temp_df)
+
+    def set_model(self):
+        """method used to specify which model to be ran
+
+        Returns:
+            None -- 
+        """        
+        # model_dict = {'CORR':self.statpoe,
+        #                 'SCC':self.sccpoe,
+        #                 'MD':self.mdpoe,
+        #                 'RD':self.rdpoe,
+        #                 'CSCC':self.csccpoe}
+        self.model = self.statpoe
+        return None 
+
+    def run(self):
+        """Method used to start the Monte Carlo run
+
+        Keyword Arguments:
+            split_calculation {bool} -- Set to true, the calculation will use the buffer_size to split the instance dataframe by that number (default: {False})
+            buffer_size {int} -- value to split the instance dataframe (default: {1000})
+
+        Returns:
+            None -- 
+        """        
+        t1 = time.time()
+
+        if hasattr(self,'result'):
+            del self.result
+
+        self.result, self.qc = self.model(self.df)
+
+        self.result["1-POE"] = 1 - self.result["POE"]
+        agg_POE = 1 - np.prod(self.result["1-POE"])       
+
+        print(f"Statistical POE Simulation")
+        print("Aggregated POE for these features is {}.\n".format(agg_POE))
+        print(f"Calculation took {time.time()-t1:.4f} seconds.")
+        return None
+
+    def merge_result(self, key):
+        return self.result.merge(self.df, on=key)
+
+    def statpoe(self, df):
+
+        # Number of features is equal to number of rows in csv file
+        i = df.shape[0]
+
+        # Setting the inputs to the appropriate variables
+        OD = df['OD_inch'].values
+        WTm = df['WT_mm'].values
+        Sm = df['grade_MPa'].values
+        df['toughness_J'] = df['toughness_J'].fillna(10)
+        Tm = df['toughness_J'].values
+        Inst = df['install_date']
+
+        OPm = df['MAOP_kPa'].values
+
+        fPDP = df['depth_fraction'].values
+        fL_measured = df['length_mm'].values
+        fW_measured = df['width_mm'].values
+        fchainage = df['chainage_m'].values
+        fstatus = df['status'].values
+        ftype = df['type'].values
+        fids = df['FeatureID'].values
+
+        vendor = df['vendor'].values
+        CGA_mean_m = df['vendor_cgr_mmpyr'].values
+        CGA_sd_m = df['vendor_cgr_sd'].values
+        tool = df['tool'].values
+        Insp = df['ILIRStartDate']
+
+        time_delta = ((self.now - Insp).dt.days.values) / 365.25
+        ILI_age = ((Insp - Inst).dt.days.values) / 365.25
+
+        # unit conversion to US units
+        WT = WTm / 25.4
+        S = (Sm * 1000) / 6.89476
+        OP = OPm / 6.89476
+
+        # tool tolerances
+        defectTol = {
+            "MFL": {
+                "sdPDP": 0.078,  # in fraction WT
+            }
+        }
+
+        tool_D = np.where(vendor == "MFL", defectTol["MFL"]["sdPDP"], defectTol["MFL"]["sdPDP"])
+
+        # feature length in inches
+        fL = np.maximum(0, fL_measured * 1.0 * (1 / 25.4))
+
+        # feature depth in inches
+        fD_run = np.maximum(0, fPDP * WT * 1.0)
+
+        # feature growth rate in inches per year
+        fD_GR = np.where(np.isnan(CGA_mean_m), 
+                        fD_run/ILI_age,
+                        CGA_mean_m / 25.4)
+
+        fD_mean = (fD_run + 0.0) + self.cgr_life_flag* fD_GR * time_delta
+
+        # logic for computing the feature standard deviation
+        fD_sd =  np.where(np.isnan(CGA_sd_m), 
+                        np.sqrt(np.power( 1 + self.cgr_life_flag*(time_delta/ILI_age) ,2)*np.power(tool_D*WT,2)),
+                        np.sqrt(np.power(tool_D*WT,2) + np.power(time_delta,2)*np.power(CGA_sd_m/25.4,2)))
+
+        l2Dt = np.power(fL, 2.0)/(OD*WT)
+        Mt = np.where(l2Dt <= 50.0,
+                        np.sqrt( 1.0 +(0.6275*l2Dt)-(0.003375*np.power(l2Dt, 2.0))),
+                        0.032*l2Dt+3.3)
+        
+        flowS = S + 10000.0
+    
+        # Failure depth in inches
+        operating_stress = (OD*OP)/(2*WT)
+        failure_depth = ((operating_stress - flowS )*(WT)) / ( ((operating_stress/Mt) - flowS)*0.85 )
+
+        POE_l = 1 - norm.cdf(0.80*WT, loc=fD_mean, scale=fD_sd)
+        POE_r = 1 - norm.cdf(failure_depth, loc=fD_mean, scale=fD_sd)
+        
+        POE = np.where(failure_depth/WT >= 0.80, POE_l, POE_r)
+
+        return_dict = {"FeatureID":fids,
+                    "time_delta":time_delta,
+                    "ILI_age":ILI_age,
+                    "WT":WT,
+                    "S":S,
+                    "OP":OP,
+                    "tool_D":tool_D,
+                    "fL_in":fL,
+                    "fD_run_in":fD_run,
+                    "fD_GR_inpyr":fD_GR,
+                    "fD_mean_in":fD_mean,
+                    "fD_sd_in":fD_sd,
+                    "l2Dt":l2Dt,
+                    "Mt":Mt,
+                    "flowS":flowS,
+                    "op_stress":operating_stress,
+                    "failure_depth":failure_depth,
+                    "POE_l":POE_l,
+                    "POE_r":POE_r,
+                    "POE":POE}
+
+        return_df = pd.DataFrame(return_dict)
+
+        return return_df, None
+
 
 class MonteCarlo:
     def __init__(self, model, run_date=None):
@@ -896,9 +1181,13 @@ class MonteCarlo:
 
 
 if __name__ == '__main__':
-    scc = MonteCarlo('SCC')
-    scc.get_data('sample_of_inputs.csv')
-    scc.set_iterations(1_000_0)
-    scc.run(split_calculation=True, buffer_size=1500)
+    # scc = MonteCarlo('SCC')
+    # scc.get_data('sample_of_inputs.csv')
+    # scc.set_iterations(1_000_0)
+    # scc.run(split_calculation=True, buffer_size=1500)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
+    corr = StatisticalPOE()
+    corr.set_config(cgr='half-life')
+    corr.get_data('sample_of_inputs_stat.csv')
+    corr.run()
