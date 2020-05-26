@@ -499,7 +499,7 @@ class MonteCarlo:
         return None
 
     def merge_result(self, key):
-        return self.result.merge(self.df, on=key, inplace=True)
+        return self.result.merge(self.df, on=key)
 
     def corrpoe(self, df, n):
 
