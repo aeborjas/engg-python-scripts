@@ -559,11 +559,17 @@ class MonteCarlo:
             "Rosen": {
                 "sdPDP": 0.078,  # in fraction WT
                 "sdL": 0.61  # in inches
+            },
+            "RosenF": {
+                "sdPDP": 0.078,  # in fraction WT
+                "sdL": 0.61  # in inches
             }
         }
 
-        tool_D = np.where(vendor == "Rosen", defectTol["Rosen"]["sdPDP"], defectTol["Rosen"]["sdPDP"])
-        tool_L = np.where(vendor == "Rosen", defectTol["Rosen"]["sdL"], defectTol["Rosen"]["sdL"])
+        tool_D = np.select([vendor =="Rosen",vendor=="RosenF"],
+                            [defectTol["Rosen"]["sdPDP"],defectTol["RosenF"]["sdPDP"]])
+        tool_L = np.select([vendor =="Rosen",vendor=="RosenF"],
+                            [defectTol["Rosen"]["sdL"],defectTol["RosenF"]["sdL"]])
 
         # non-distributed variables
         OD = np.tile(OD, (n, 1)) 
@@ -722,11 +728,15 @@ class MonteCarlo:
             }
         }
 
-        tool_D = 0.121*WTm
-        tool_L = 8.034  #in mm
+        # tool_D = 0.121*WTm
+        # tool_L = 8.034  #in mm
+        tool_D = 0.78
+        tool_L = 7.80  #in mm
 
-        # tool_D = np.where(vendor=="Rosen",defectTol["Rosen"]["sdPDP"],defectTol["PII"]["sdPDP"])
-        # tool_L = np.where(vendor=="Rosen",defectTol["Rosen"]["sdL"],defectTol["PII"]["sdL"])
+        # tool_D = np.select([tool =="AFD",tool=="EMAT"],
+        #                     [defectTol["AFD"]["sdPDP"],defectTol["EMAT"]["sdPDP"]])
+        # tool_L = np.select([tool =="AFD",tool=="EMAT"],
+        #                     [defectTol["AFD"]["sdL"],defectTol["EMAT"]["sdL"]])
 
         #non-distributed variables
         
@@ -854,9 +864,10 @@ class MonteCarlo:
                 }
             }
 
-        tool_D = np.where(vendor=="Rosen",defectTol["Rosen"]["sdPDP"],defectTol["PII"]["sdPDP"])
-        tool_L = np.where(vendor=="Rosen",defectTol["Rosen"]["sdL"],defectTol["PII"]["sdL"])
-
+        tool_D = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII"],
+                            [defectTol["Rosen"]["sdPDP"],defectTol["RosenF"]["sdPDP"],defectTol["PII"]["sdPDP"]])
+        tool_L = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII"],
+                            [defectTol["Rosen"]["sdL"],defectTol["RosenF"]["sdL"],defectTol["PII"]["sdL"]])
 
         ####Artificially added------------------------------
         qc_list = [OD, WTm, Sm, Tm, OPm, Inst.values,
@@ -979,9 +990,11 @@ class MonteCarlo:
                 }
             }
 
-        tool_D = np.where(vendor=='Rosen', defectTol['Rosen']['sdPDP'],defectTol['PII']['sdPDP'])
-        tool_L = np.where(vendor=='Rosen', defectTol['Rosen']['sdL'],defectTol['PII']['sdL'])
-        
+        tool_D = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII"],
+                            [defectTol["Rosen"]["sdPDP"],defectTol["RosenF"]["sdPDP"],defectTol["PII"]["sdPDP"]])
+        tool_L = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII"],
+                            [defectTol["Rosen"]["sdL"],defectTol["RosenF"]["sdL"],defectTol["PII"]["sdL"]])
+
         np.random.seed()
         
         OD_n_1 = np.random.rand(n,i)
