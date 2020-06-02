@@ -192,7 +192,7 @@ def nf_EPRG(od, wt, uts, dL, dW, dD, gD, MAX, MIN, sf=1.0, units="SI"):
 
     return NF
 
-def ls_corr_rupture(fail_pressure, operating_pressure, bulk=False):
+def ls_corr_rupture(fail_pressure, operating_pressure, thresh=1.0, bulk=False):
     """
     Limit state for rupture failure mode of corrosion
     :param fail_pressure: failure pressure, in kPa (SI), or psi (US)
@@ -201,7 +201,7 @@ def ls_corr_rupture(fail_pressure, operating_pressure, bulk=False):
     :return: returns array(s) of 1's and 0's, where 1 indicates a failure, and 0 indicates no failure
     """
 
-    ruptures = fail_pressure <= operating_pressure
+    ruptures = fail_pressure <= thresh * operating_pressure
     ruptures = ruptures.astype(int)
     if bulk:
 
@@ -242,7 +242,7 @@ def ls_corr_tot(fail_1, fail_2, bulk=False):
         fail_count = np.sum(fails)
     return fails, fail_count
 
-def ls_scc_rupture(fail_pressure, operating_pressure, bulk=False):
+def ls_scc_rupture(fail_pressure, operating_pressure, thresh=1.0, bulk=False):
     """
     Limit state for rupture failure mode of crackosion
     :param fail_pressure: failure pressure, in kPa (SI), or psi (US)
@@ -251,7 +251,7 @@ def ls_scc_rupture(fail_pressure, operating_pressure, bulk=False):
     :return: returns array(s) of 1's and 0's, where 1 indicates a failure, and 0 indicates no failure
     """
 
-    ruptures = fail_pressure <= operating_pressure
+    ruptures = fail_pressure <= thresh * operating_pressure
     ruptures = ruptures.astype(int)
     if bulk:
 
@@ -281,7 +281,7 @@ def ls_scc_leak(wt, fD, thresh=0.8, bulk=False):
         leak_count = np.sum(leaks)
     return leaks, leak_count
 
-def ls_md_rupture(fail_pressure, operating_pressure, bulk=False):
+def ls_md_rupture(fail_pressure, operating_pressure, thresh=1.0, bulk=False):
     """
     Limit state for rupture failure mode of crackosion
     :param fail_pressure: failure pressure, in kPa (SI), or psi (US)
@@ -290,7 +290,7 @@ def ls_md_rupture(fail_pressure, operating_pressure, bulk=False):
     :return: returns array(s) of 1's and 0's, where 1 indicates a failure, and 0 indicates no failure
     """
 
-    ruptures = fail_pressure <= operating_pressure
+    ruptures = fail_pressure <= thresh*operating_pressure
     ruptures = ruptures.astype(int)
     if bulk:
  
@@ -1042,28 +1042,30 @@ class MonteCarlo:
         T = Tm*0.7375621
         OP = OPm/6.894069706666676
 
-        sdDepthTool = np.where(WTm < 10, 0.117, 0.156)  #fraction of WT
-
         defectTol = {
+            "UTCD": {
+                "sdPDP": np.where(WTm*cPDP < 4, 0.780, 3.120),  # absolute mm
+                "sdL": 7.80  # in mm
+            },
             "AFD": {
                 "sdPDP": 0.195,  # fraction of WT
                 "sdL": 15.6  # in mm
             },
             "EMAT": {
-                "sdPDP": sdDepthTool,
+                "sdPDP": np.where(WTm < 10, 0.117, 0.156),
                 "sdL": 7.8  # in mm
             }
         }
 
         # tool_D = 0.121*WTm
         # tool_L = 8.034  #in mm
-        tool_D = 0.78
-        tool_L = 7.80  #in mm
+        # tool_D = 0.78
+        # tool_L = 7.80  #in mm
 
-        # tool_D = np.select([tool =="AFD",tool=="EMAT"],
-        #                     [defectTol["AFD"]["sdPDP"],defectTol["EMAT"]["sdPDP"]])
-        # tool_L = np.select([tool =="AFD",tool=="EMAT"],
-        #                     [defectTol["AFD"]["sdL"],defectTol["EMAT"]["sdL"]])
+        tool_D = np.select([tool =="AFD",tool=="EMAT",tool=="UTCD"],
+                            [defectTol["AFD"]["sdPDP"]*WTm,defectTol["EMAT"]["sdPDP"]*WTm,defectTol["UTCD"]["sdPDP"]])
+        tool_L = np.select([tool =="AFD",tool=="EMAT",tool=="UTCD"],
+                            [defectTol["AFD"]["sdL"],defectTol["EMAT"]["sdL"],defectTol["UTCD"]["sdL"]])
 
         #non-distributed variables
         
@@ -1101,7 +1103,7 @@ class MonteCarlo:
 
         ruptures, rupture_count = ls_md_rupture(failPress, OP, bulk=True)
 
-        leaks, leak_count = ls_md_leak(WTd, cD, thresh=1.0, bulk=True)
+        leaks, leak_count = ls_md_leak(WTd, cD, bulk=True)
 
         fails, fail_count = ls_crack_tot(ruptures, leaks, bulk=True)
 
