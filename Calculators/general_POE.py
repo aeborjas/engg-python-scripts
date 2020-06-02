@@ -3,17 +3,344 @@ import time, datetime
 import numpy as np, pandas as pd
 from os.path import abspath, dirname, join
 
-import simpoe.cracks.failureStress, simpoe.cracks.crackLimitStates
-import simpoe.corrosion.failureStress, simpoe.corrosion.corrLimitStates
-import simpoe.dents.failureCycles, simpoe.dents.dentLimitStates
-from simpoe import unpacker, model_constants, distributer, cgr
+# import importlib.util
+# spec = importlib.util.spec_from_file_location("useful_func", r"C:\Users\armando_borjas\Documents\Python\useful_func.py")
+# useful_func = importlib.util.module_from_spec(spec)
+# spec.loader.exec_module(useful_func)
 
-import importlib.util
-spec = importlib.util.spec_from_file_location("useful_func", r"C:\Users\armando_borjas\Documents\Python\useful_func.py")
-useful_func = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(useful_func)
+def random_prob_gen(x, iterations=1, features=1):
+    temp=[]
+    for var in range(x):
+        temp.append(np.random.rand(iterations,features))
+    return np.array(temp)
 
-pd.set_option('display.max_columns',500)
+def ultimate_determiner(grade):
+    """
+    Takes grade in MPa as input, and returns Ultimate tensile strength in MPa
+    :param grade:
+    :return:
+    """
+    lookupUTS = np.array([(206.84, 406.79),
+                 (241.32, 430.92),
+                 (289.58, 499.87),
+                 (317.16, 499.87),
+                 (358.53, 524.00),
+                 (386.11, 541.93),
+                 (413.69, 568.82),
+                 (448.16, 579.16),
+                 (482.63, 599.84),
+                 (551.58, 639.14),
+                 (9999.00, 679.13)
+                 ])
+
+    index_match = np.searchsorted(lookupUTS[:,0], grade)
+    return lookupUTS[index_match,1]
+
+#CGA
+def cgr_mpy(mpy=10.0):
+    """
+    :param mpy: imperfection growth rate in mili-inches per year, MPY. Default of 10 MPY.
+    :return:    imperfection growth rate in mm/yr
+    """
+    return (mpy/1000.0)*25.4
+
+#half-life
+def half_life(d,start,end):
+    '''
+
+    :param d:       feature property (in any units), at the time of measuring
+    :param start:   start year, datetime.date dataframe object, or integer year.
+    :param end:     end year, datetime.date dataframe object, or integer year.
+    :return:        returns the half-life growth rate based on the input feature units
+    '''
+    try:
+        return (2*d)/((end-start).dt.days.values/365.25)
+    except AttributeError:
+        return (2*d)/(end-start)
+
+#2.2%WT
+def pct_wt(wt):
+    """
+
+    :param wt:  returns the imperfection growth rate as 2.2% of the wall thickness, *
+    :return:
+    """
+    return 0.0220*wt
+
+#weibull Distribution
+# shape = 1.439
+# scale = 0.1
+def cgr_weibull(p,shp=1.439,scl=0.1):
+    '''
+    Returns the imperfection growth rate based on a Weibull distribution inverse cumulative density function, using shape and scale parameters.
+    Requires Numpy module
+    :param p:   random number between 0 and 1
+    :param shp: shape parameter, default of 1.439
+    :param scl: scale parameter, default of 0.1
+    :return:    imperfection growth rate in mm/yr
+    '''
+    return  scl*np.power( -np.log(1.0-p) ,1.0/shp)
+
+def modified_b31g(od, wt, s, fL, fD, units="SI"):
+    """
+    Calculates the failure stress using the Modified B31G Equation
+    :param od:  Pipe outside diameter, in mm (SI), or inches (US)
+    :param wt:  Pipe wall thickness, in mm (SI), or inches (US)
+    :param s:   Pipe grade, in kPa (SI), or psi (US)
+    :param fL:  feature length, in mm (SI), or inches (US)
+    :param fD:  feature depth, in mm (SI), or inches (US)
+    :param units: flag for which units to use, "SI" or "US", default "SI"
+    :return: Failure stress, in kPa (SI), or psi (US)
+    """
+
+    l2Dt = np.power(fL, 2.0)/(od*wt)
+    Mt = np.where(l2Dt <= 50.0,
+                  np.sqrt( 1.0 +(0.6275*l2Dt)-(0.003375*np.power(l2Dt, 2.0))),
+                  0.032*l2Dt+3.3)
+    if units=="SI":
+        flowS = s + 68947.6
+    else:
+        flowS = s + 10000.0
+
+    failStress = flowS *( 1.0- 0.85 * (fD/wt)) / (1.0 - 0.85 * (fD/(wt * Mt)))
+    return failStress
+
+def modified_lnsec(od, wt, s, t, e, cL, cD, units="SI"):
+    """
+    Calculates the failure stress using the Modified ln-sec Equation
+    :param od:      Pipe outside diameter, in mm (SI), or inches (US)
+    :param wt:      Pipe wall thickness, in mm (SI), or inches (US)
+    :param s:       Pipe grade, in kPa (SI), or psi (US)
+    :param t:       Pipe toughness, in J (SI), or ft.lbs (US)
+    :param e:       Pipe Young's Modulus, in kPa (SI), or psi (US)
+    :param cL:      crack length, in mm (SI), or inches (US)
+    :param cD:      crack depth, in mm (SI), or inches (US)
+    :param units:   flag for which units to use, "SI" or "US", default "SI"
+    :return:        Failure stress, in kPa (SI), or psi (US)
+    """
+
+    if units=="SI":
+        od = od/25.4
+        wt = wt/25.4
+        s = s/6.89476
+        t = t*0.737562
+        e = e/6.89476
+        cL = cL/25.4
+        cD = cD/25.4
+
+    flowS = s + 10000.0
+
+    ellipticalC = np.minimum(np.pi*cL/4.0,np.power(67.2*od*wt*0.5,0.5))
+
+    CRTRatio = np.minimum(93.753,np.power(ellipticalC,2)/(od*0.5*wt))
+
+    Mt = np.maximum(np.power(1.0+1.255*CRTRatio-0.0135*np.power(CRTRatio,2.0),0.5), (cD/wt)+0.001)
+    Mp = (1.0-cD/(wt*Mt))/(1-(cD/wt))
+
+    x = (12.0*e*np.pi*(t/0.124))/(8.0*ellipticalC*np.power(flowS,2.0))
+    y = x*np.power(1.0-np.power(cD/wt,0.8),-1.0)
+
+    failStress = (flowS/Mp)*np.arccos(np.exp(-x))/np.arccos(np.exp(-y))
+
+    if units=="SI":
+        failStress = failStress*6.89476
+
+    return failStress
+
+def nf_EPRG(od, wt, uts, dL, dW, dD, gD, MAX, MIN, sf=1.0, units="SI"):
+    """
+    calculates the number of cycles until failure given equivalent stress cycles
+    :param od:      Pipe diameter in mm (SI), or in inches (US)
+    :param wt:      Pipe wall thickness in mm (SI), or in inches (US)
+    :param uts:     Pipe ultimate tensile strength in MPa (SI), or in ksi (US)
+    :param dL:      Feature length in mm (SI), or in inches (US)
+    :param dW:      Feature width in mm (SI), or in inches (US)
+    :param dD:      Feature depth in mm (SI), or in inches (US)
+    :param gD:      Gouge depth in mm (SI), or in inches (US)
+    :param MAX:     Maximum stress in equivalent cycle in MPa (SI), or in ksi (US)
+    :param MIN:     Minimum stress in equivalent cycle in MPa (SI), or in ksi (US)
+    :param sf:      Sensitivity factor, default of 1.0
+    :param units:   Unit system, SI be default, or US
+    :return:    Number of cycles until failure
+    """
+
+    #od, wt, uts, dL, dW, dD, gD, MAX, MIN = float(od), float(wt), float(uts), float(dL), float(dW), float(dD), float(gD), float(MAX), float(MIN)
+
+    if units != "SI":
+        od = od*25.4
+        wt = wt*25.4
+        uts = uts*6.89476
+        dL = dL * 25.4
+        dW = dW * 25.4
+        dD = dD * 25.4
+        gD = gD*25.4
+        MAX = MAX * 6.89476
+        MIN = MIN * 6.89476
+
+    dRL = (np.power(dL, 2.0) + 4.0 * np.power(dD, 2.0)) / (8.0 * dD)
+    dRW = (np.power(dW, 2.0) + 4.0 * np.power(dD, 2.0)) / (8.0 * dD)
+    dR = np.minimum(dRW, dRL)
+
+    Crd = np.where(dR < 5.0*wt, 1.0, 2.0)
+
+    dSEF = 1 + Crd*np.power(np.power(dD,1.5)*wt/od,0.5)
+    gSEF = 1 + 9.0*(gD/wt)
+
+    sigma = (MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
+
+    NF = (5622.0/sf)*np.power(uts/(sigma*gSEF*dSEF),5.26)
+
+    return NF
+
+def ls_corr_rupture(fail_pressure, operating_pressure, bulk=False):
+    """
+    Limit state for rupture failure mode of corrosion
+    :param fail_pressure: failure pressure, in kPa (SI), or psi (US)
+    :param operating_pressure: operating pressure, in kPa (SI), or psi (US)
+    :param bulk: Flag for applying limit state on a bulk basis, default is False
+    :return: returns array(s) of 1's and 0's, where 1 indicates a failure, and 0 indicates no failure
+    """
+
+    ruptures = fail_pressure <= operating_pressure
+    ruptures = ruptures.astype(int)
+    if bulk:
+
+        rupture_count = np.sum(ruptures, axis=0)
+    else:
+
+        rupture_count = np.sum(ruptures)
+    return ruptures, rupture_count
+
+def ls_corr_leak(wt, fD, thresh=0.8, bulk=False):
+    """
+    Limit state for leak failure mode of corrosion
+    :param wt: pipe wall thickness, in mm (SI), or inch (US)
+    :param fD: feature depth, in mm (SI), or inch (US)
+    :param thresh: leak threshold, in fraction, default of 0.80
+    :param bulk: Flag for applying limit state on a bulk basis, default is False
+    :return: returns array(s) of 1's and 0's where 1 indicates a failure, and 0 indicates no failure
+    """
+
+    leaks = fD >= thresh * wt
+    leaks = leaks.astype(int)
+    if bulk:
+
+        leak_count = np.sum(leaks, axis=0)
+    else:
+
+        leak_count = np.sum(leaks)
+    return leaks, leak_count
+
+def ls_corr_tot(fail_1, fail_2, bulk=False):
+
+    fails = np.maximum(fail_1, fail_2)
+    if bulk:
+
+        fail_count = np.sum(fails, axis=0)
+    else:
+
+        fail_count = np.sum(fails)
+    return fails, fail_count
+
+def ls_scc_rupture(fail_pressure, operating_pressure, bulk=False):
+    """
+    Limit state for rupture failure mode of crackosion
+    :param fail_pressure: failure pressure, in kPa (SI), or psi (US)
+    :param operating_pressure: operating pressure, in kPa (SI), or psi (US)
+    :param bulk: Flag for applying limit state on a bulk basis, default is False
+    :return: returns array(s) of 1's and 0's, where 1 indicates a failure, and 0 indicates no failure
+    """
+
+    ruptures = fail_pressure <= operating_pressure
+    ruptures = ruptures.astype(int)
+    if bulk:
+
+        rupture_count = np.sum(ruptures, axis=0)
+    else:
+
+        rupture_count = np.sum(ruptures)
+    return ruptures, rupture_count
+
+def ls_scc_leak(wt, fD, thresh=0.8, bulk=False):
+    """
+    Limit state for leak failure mode of crackosion
+    :param wt: pipe wall thickness, in mm (SI), or inch (US)
+    :param fD: feature depth, in mm (SI), or inch (US)
+    :param thresh: leak threshold, in fraction, default of 0.80
+    :param bulk: Flag for applying limit state on a bulk basis, default is False
+    :return: returns array(s) of 1's and 0's where 1 indicates a failure, and 0 indicates no failure
+    """
+
+    leaks = fD >= thresh * wt
+    leaks = leaks.astype(int)
+    if bulk:
+ 
+        leak_count = np.sum(leaks, axis=0)
+    else:
+
+        leak_count = np.sum(leaks)
+    return leaks, leak_count
+
+def ls_md_rupture(fail_pressure, operating_pressure, bulk=False):
+    """
+    Limit state for rupture failure mode of crackosion
+    :param fail_pressure: failure pressure, in kPa (SI), or psi (US)
+    :param operating_pressure: operating pressure, in kPa (SI), or psi (US)
+    :param bulk: Flag for applying limit state on a bulk basis, default is False
+    :return: returns array(s) of 1's and 0's, where 1 indicates a failure, and 0 indicates no failure
+    """
+
+    ruptures = fail_pressure <= operating_pressure
+    ruptures = ruptures.astype(int)
+    if bulk:
+ 
+        rupture_count = np.sum(ruptures, axis=0)
+    else:
+
+        rupture_count = np.sum(ruptures)
+    return ruptures, rupture_count
+
+def ls_md_leak(wt, fD, thresh=0.8, bulk=False):
+    """
+    Limit state for leak failure mode of crackosion
+    :param wt: pipe wall thickness, in mm (SI), or inch (US)
+    :param fD: feature depth, in mm (SI), or inch (US)
+    :param thresh: leak threshold, in fraction, default of 0.80
+    :param bulk: Flag for applying limit state on a bulk basis, default is False
+    :return: returns array(s) of 1's and 0's where 1 indicates a failure, and 0 indicates no failure
+    """
+
+    leaks = fD >= thresh * wt
+    leaks = leaks.astype(int)
+    if bulk:
+
+        leak_count = np.sum(leaks, axis=0)
+    else:
+
+        leak_count = np.sum(leaks)
+    return leaks, leak_count
+
+def ls_crack_tot(fail_1, fail_2, bulk=False):
+
+    fails = np.maximum(fail_1, fail_2)
+    if bulk:
+
+        fail_count = np.sum(fails, axis=0)
+    else:
+
+        fail_count = np.sum(fails)
+    return fails, fail_count
+
+def ls_dent_fail(NF, n, bulk=False):
+
+	fails = NF < n
+	fails = fails.astype(int)
+	if bulk:
+		fail_count = np.sum(fails, axis=0)
+	else:
+		fail_count = np.sum(fails)
+	return fails, fail_count
+
 class StatisticalPOE:
     def __init__(self,  run_date=None):
         self.set_config(run_date)
@@ -304,7 +631,7 @@ class MonteCarlo:
     def __init__(self, model, run_date=None):
         self.model_type = model
         self.set_model()
-        self.set_config(run_date)
+        self.set_config(run_date=run_date)
         return None
 
     def set_config(self,run_date=None):
@@ -577,7 +904,7 @@ class MonteCarlo:
 
         np.random.seed()
 
-        mE_n_1, WT_n_2, S_n_3, Y_n_4, fL_n_5, fD_n_6, fGR_n_7 = distributer.random_prob_gen(7, iterations=n, features=i)
+        mE_n_1, WT_n_2, S_n_3, Y_n_4, fL_n_5, fD_n_6, fGR_n_7 = random_prob_gen(7, iterations=n, features=i)
 
         # distributed variables
         WTd = norm.ppf(WT_n_2, loc=WT * meanWT, scale=WT * sdWT)
@@ -590,18 +917,18 @@ class MonteCarlo:
         fD_run = np.maximum(0, norm.ppf(fD_n_6, loc=fPDP * WT * 1.0, scale=tool_D * WT))
 
         if mechanism == "CGA":
-            fD_GR = cgr.cgr_mpy(CGR_CGA_MPY)
+            fD_GR = cgr_mpy(CGR_CGA_MPY)
         elif mechanism == "weibull":
-            fD_GR = cgr.cgr_weibull(fGR_n_7, shape, scale) / 25.4
+            fD_GR = cgr_weibull(fGR_n_7, shape, scale) / 25.4
         elif mechanism == "logic":
             if time_delta >= 20:
-                fD_GR = cgr.half_life(fD_run, Inst, Insp)
+                fD_GR = half_life(fD_run, Inst, Insp)
             else:
-                fD_GR = cgr.pct_wt(WTd)
+                fD_GR = pct_wt(WTd)
         elif mechanism == "half-life":
-            fD_GR = cgr.half_life(fD_run, Inst, Insp)  # fD_run is in inches
+            fD_GR = half_life(fD_run, Inst, Insp)  # fD_run is in inches
         elif mechanism == "2.2%WT":
-            fD_GR = cgr.pct_wt(WTd)
+            fD_GR = pct_wt(WTd)
         else:
             raise Exception("Please select a valid mechanism: half-life | 2.2%WT | CGA | logic | weibull")
 
@@ -610,16 +937,16 @@ class MonteCarlo:
         modelError = model_error(mE_n_1)
 
         # Failure Stress in psi
-        failure_stress = simpoe.corrosion.failureStress.modified_b31g(OD, WTd, Sdist, fL, fD, units="US") * modelError
+        failure_stress = modified_b31g(OD, WTd, Sdist, fL, fD, units="US") * modelError
 
         # Failure pressure in psi
         failPress = 2 * failure_stress * WTd / OD
 
-        ruptures, rupture_count = simpoe.corrosion.corrLimitStates.ls_corr_rupture(failPress, OP, bulk=True)
+        ruptures, rupture_count = ls_corr_rupture(failPress, OP, bulk=True)
 
-        leaks, leak_count = simpoe.corrosion.corrLimitStates.ls_corr_leak(WTd, fD, bulk=True)
+        leaks, leak_count = ls_corr_leak(WTd, fD, bulk=True)
 
-        fails, fail_count = simpoe.corrosion.corrLimitStates.ls_corr_tot(ruptures, leaks, bulk=True)
+        fails, fail_count = ls_corr_tot(ruptures, leaks, bulk=True)
 
         # Perhaps can turn the next section into a triggerable function.
         # Function would take in inputs that the user desires to create an export of, and fire off a csv
@@ -695,10 +1022,10 @@ class MonteCarlo:
         pivar = np.pi
 
         #Young's modulus in psi
-        E = model_constants.const['E']
+        E = 30.0e6
 
         #Crack fracture area in sq. inches
-        fa = model_constants.const['fa']
+        fa = 0.124
 
         meanOD = 1.0
         sdOD = 0.0006
@@ -746,7 +1073,7 @@ class MonteCarlo:
         #distributed variables
         np.random.seed()
 
-        OD_n_1, WT_n_2, S_n_3, Y_n_4, cL_n_5, cD_n_6 = distributer.random_prob_gen(6, iterations=n, features=i)
+        OD_n_1, WT_n_2, S_n_3, Y_n_4, cL_n_5, cD_n_6 = random_prob_gen(6, iterations=n, features=i)
 
         #distributed variables imperial
         ODd = norm.ppf(OD_n_1, loc=OD*meanOD, scale=OD*sdOD)
@@ -764,7 +1091,7 @@ class MonteCarlo:
         cD_GR = cD_run/ILI_age
         cD = cD_run +  cD_GR*time_delta
 
-        failStress = simpoe.cracks.failureStress.modified_lnsec(ODd, WTd, Sdist, T, Ydist, cL, cD, units="US")
+        failStress = modified_lnsec(ODd, WTd, Sdist, T, Ydist, cL, cD, units="US")
 
         #Failure pressure in psi
         failPress = 2*failStress*WTd/ODd
@@ -772,11 +1099,11 @@ class MonteCarlo:
         fsNaNs = np.extract(np.isnan(failStress),failStress)
         fsNaNs_count = fsNaNs.size
 
-        ruptures, rupture_count = simpoe.cracks.crackLimitStates.ls_md_rupture(failPress, OP, bulk=True)
+        ruptures, rupture_count = ls_md_rupture(failPress, OP, bulk=True)
 
-        leaks, leak_count = simpoe.cracks.crackLimitStates.ls_md_leak(WTd, cD, thresh=1.0, bulk=True)
+        leaks, leak_count = ls_md_leak(WTd, cD, thresh=1.0, bulk=True)
 
-        fails, fail_count = simpoe.cracks.crackLimitStates.ls_crack_tot(ruptures, leaks, bulk=True)
+        fails, fail_count = ls_crack_tot(ruptures, leaks, bulk=True)
 
         return_dict = {"FeatureID":cids,
                     "fail_count":fail_count,
@@ -823,13 +1150,11 @@ class MonteCarlo:
         # shape, scale = 2.0, 0.26
         shape, scale = 2.55, 0.1
 
-        pivar = np.pi
-
         #Young's modulus in psi
-        E = model_constants.const['E']
+        E = 30.0e6
 
         #Crack fracture area in sq. inches
-        fa = model_constants.const['fa']
+        fa = 0.124
 
         meanOD = 1.0
         sdOD = 0.0006
@@ -894,7 +1219,7 @@ class MonteCarlo:
         #distributed variables
         np.random.seed()
 
-        OD_n_1, WT_n_2, S_n_3, Y_n_4, cL_n_5, cD_n_6, cGR_n_7 = distributer.random_prob_gen(7, iterations=n, features=i)
+        OD_n_1, WT_n_2, S_n_3, Y_n_4, cL_n_5, cD_n_6, cGR_n_7 = random_prob_gen(7, iterations=n, features=i)
 
         #distributed variables imperial
         ODd = norm.ppf(OD_n_1, loc=OD*meanOD, scale=OD*sdOD)
@@ -908,12 +1233,12 @@ class MonteCarlo:
 
         #Crack detpth in inches
         cD_run = np.maximum(0, norm.ppf(cD_n_6, loc=cPDP*WTm*1.0, scale=tool_D))/25.4
-        cD_GR = cgr.cgr_weibull(cGR_n_7, shape, scale) / 25.4
+        cD_GR = cgr_weibull(cGR_n_7, shape, scale) / 25.4
         #cD_GR = 0.30 / 25.4
 
         cD = cD_run + cD_GR * time_delta
 
-        failStress = simpoe.cracks.failureStress.modified_lnsec(ODd, WTd, Sdist, T, Ydist, cL, cD, units="US")
+        failStress = modified_lnsec(ODd, WTd, Sdist, T, Ydist, cL, cD, units="US")
 
         #Failure pressure in psi
         failPress = 2*failStress*WTd/ODd
@@ -921,11 +1246,11 @@ class MonteCarlo:
         fsNaNs = np.extract(np.isnan(failStress),failStress)
         fsNaNs_count = fsNaNs.size
 
-        ruptures, rupture_count = simpoe.cracks.crackLimitStates.ls_scc_rupture(failPress, OP, bulk=True)
+        ruptures, rupture_count = ls_scc_rupture(failPress, OP, bulk=True)
 
-        leaks, leak_count = simpoe.cracks.crackLimitStates.ls_scc_leak(WTd, cD, bulk=True)
+        leaks, leak_count = ls_scc_leak(WTd, cD, bulk=True)
 
-        fails, fail_count = simpoe.cracks.crackLimitStates.ls_crack_tot(ruptures, leaks, bulk=True)
+        fails, fail_count = ls_crack_tot(ruptures, leaks, bulk=True)
 
         return_dict = {"FeatureID":cids,
                     "fail_count":fail_count,
@@ -1068,7 +1393,7 @@ class MonteCarlo:
         ODm = OD * 25.4
 
         ###SOMETHING IS WRONG HERE###--------------------------------------
-        UTSm = model_constants.ultimate_determiner(Sm)
+        UTSm = ultimate_determiner(Sm)
 
         # Operating pressure in kPa
         MAXStr = (MAXPm * ODm) / (2000 * WTm)
@@ -1138,7 +1463,7 @@ class MonteCarlo:
         # distributed variables
         np.random.seed()
 
-        OD_n_1, WT_n_2, UTS_n_3, g_n_4, dW_n_5, dL_n_6, dD_n_7 = distributer.random_prob_gen(7, iterations=n, features=i)
+        OD_n_1, WT_n_2, UTS_n_3, g_n_4, dW_n_5, dL_n_6, dD_n_7 = random_prob_gen(7, iterations=n, features=i)
 
         # distributed variables
         ODd = norm.ppf(OD_n_1, loc=ODm * meanOD, scale=ODm * sdOD)
@@ -1157,11 +1482,11 @@ class MonteCarlo:
         # dent depth in mm
         dD_run = np.maximum(0.01, norm.ppf(dD_n_7, loc=dPDP * OD * 25.4 * 1.0, scale=tool_D))
 
-        NF = simpoe.dents.failureCycles.nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr)
+        NF = nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr)
 
         n_cycles = time_delta * cycles
 
-        fails, fail_count = simpoe.dents.dentLimitStates.ls_dent_fail(NF, n_cycles, bulk=True)
+        fails, fail_count = ls_dent_fail(NF, n_cycles, bulk=True)
 
         return_dict = {"FeatureID":dids,
                     "fail_count": fail_count,
@@ -1194,13 +1519,14 @@ class MonteCarlo:
 
 
 if __name__ == '__main__':
-    # scc = MonteCarlo('SCC')
-    # scc.get_data('sample_of_inputs.csv')
-    # scc.set_iterations(1_000_0)
-    # scc.run(split_calculation=True, buffer_size=1500)
+    pd.set_option('display.max_columns',500)
+    scc = MonteCarlo('SCC')
+    scc.get_data('sample_of_inputs.csv')
+    scc.set_iterations(1_000_0)
+    scc.run(split_calculation=True, buffer_size=1500)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
-    corr = StatisticalPOE(run_date='2019-12-31')
+    # corr = StatisticalPOE(run_date='2019-12-31')
 
-    corr.get_data('sample_of_inputs_stat.csv')
-    corr.run()
+    # corr.get_data('sample_of_inputs_stat.csv')
+    # corr.run()
