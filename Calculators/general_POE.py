@@ -628,22 +628,48 @@ class StatisticalPOE:
 
 
 class MonteCarlo:
-    def __init__(self, model, run_date=None):
+    def __init__(self, model, config=None):
         self.model_type = model
         self.set_model()
-        self.set_config(run_date=run_date)
+        self.set_config(config)
         return None
 
-    def set_config(self,run_date=None):
+    def set_config(self,config):
         """Allows to se the monte carlo run date to something other than current datetime
 
         Keyword Arguments:
             run_date {string} -- the date in YYYY-MM-DD format to set (default: {None})
         """
-        if run_date == None:
-            self.now = datetime.date.today()
+        if 'iterations' in config:
+            self.iterations = config['iterations']
         else:
-            self.now = datetime.datetime.strptime(run_date, '%Y-%m-%d').date()
+            self.iterations = 10
+
+        if 'run_date' in config:
+            self.now = datetime.datetime.strptime(config['run_date'], '%Y-%m-%d').date()
+        else:
+            self.now = datetime.date.today()
+
+        if 'weibull_shape' in config:
+            self.weibull_shape = config['weibull_shape']
+        else:
+            self.weibull_shape = 1.439
+
+        if 'weibull_scale' in config:
+            self.weibull_scale = config['weibull_scale']
+        else:
+            self.weibull_scale = 0.1
+
+        if 'leak_thresh' in config:
+            self.leak_thresh = config['leak_thresh']
+        else:
+            self.leak_thresh = 0.80
+
+        if 'rupt_thresh' in config:
+            self.rupt_thresh = config['rupt_thresh']
+        else:
+            self.rupt_thresh = 1.0
+
         pass
 
     def get_data(self, filepath):
@@ -758,18 +784,6 @@ class MonteCarlo:
                             ))
             return kwargs['df'].append(temp_df)
 
-    def set_iterations(self, iterations):
-        """Sets the number of iterations to be considered in monte carlo assessment
-
-        Arguments:
-            iterations {float} -- Number of iterations desired
-
-        Returns:
-            None -- 
-        """        
-        self.iterations = iterations
-        return None
-
     def index_marks(self, nrows, chunk_size):
         return range(chunk_size, np.ceil(nrows / chunk_size).astype(int) * chunk_size, chunk_size)
 
@@ -820,7 +834,16 @@ class MonteCarlo:
         self.result["1-POE"] = 1 - self.result["POE"]
         agg_POE = 1 - np.prod(self.result["1-POE"])       
 
-        print(f"{self.model_type} POE Simulation")
+        print(f"Model: {self.model_type} POE Simulation")
+
+        print(f"Count of anomalies: {self.df.shape[0]}")
+        print(f"Iterations: {self.iterations:,}")
+        print(f"Date of analysis: {self.now}")
+        print(f"Weibull Shape: {self.weibull_shape}")
+        print(f"Weibull Scale: {self.weibull_scale}")
+        print(f"Leak threshold modifier: {self.leak_thresh}")
+        print(f"Rupture threshold modifier: {self.rupt_thresh}")
+
         print("Aggregated POE for these features is {}.\n".format(agg_POE))
         print(f"Calculation took {time.time()-t1:.4f} seconds.")
         return None
@@ -864,8 +887,8 @@ class MonteCarlo:
         CGR_CGA_MPY = 10  
 
         # weibull Distribution parameters
-        shape = 1.439
-        scale = 0.1
+        shape = self.weibull_shape
+        scale = self.weibull_scale
 
         def model_error(p):
             return 0.914 + gamma.ppf(p, 2.175, scale=0.225)
@@ -942,9 +965,9 @@ class MonteCarlo:
         # Failure pressure in psi
         failPress = 2 * failure_stress * WTd / OD
 
-        ruptures, rupture_count = ls_corr_rupture(failPress, OP, bulk=True)
+        ruptures, rupture_count = ls_corr_rupture(failPress, OP, thresh=self.rupt_thresh, bulk=True)
 
-        leaks, leak_count = ls_corr_leak(WTd, fD, bulk=True)
+        leaks, leak_count = ls_corr_leak(WTd, fD, thresh=self.leak_thresh, bulk=True)
 
         fails, fail_count = ls_corr_tot(ruptures, leaks, bulk=True)
 
@@ -1015,11 +1038,6 @@ class MonteCarlo:
 
         time_delta = ((self.now-Insp).dt.days.values)/365.25
         ILI_age = ((Insp-Inst).dt.days.values)/365.25
-
-        #Growth Rate mechanism
-        shape, scale = 2.55, 0.10
-
-        pivar = np.pi
 
         #Young's modulus in psi
         E = 30.0e6
@@ -1101,9 +1119,9 @@ class MonteCarlo:
         fsNaNs = np.extract(np.isnan(failStress),failStress)
         fsNaNs_count = fsNaNs.size
 
-        ruptures, rupture_count = ls_md_rupture(failPress, OP, bulk=True)
+        ruptures, rupture_count = ls_md_rupture(failPress, OP, thresh=self.rupt_thresh, bulk=True)
 
-        leaks, leak_count = ls_md_leak(WTd, cD, bulk=True)
+        leaks, leak_count = ls_md_leak(WTd, cD, thresh=self.leak_thresh, bulk=True)
 
         fails, fail_count = ls_crack_tot(ruptures, leaks, bulk=True)
 
@@ -1150,7 +1168,7 @@ class MonteCarlo:
 
         #Growth Rate mechanism
         # shape, scale = 2.0, 0.26
-        shape, scale = 2.55, 0.1
+        shape, scale = self.weibull_shape, self.weibull_scale
 
         #Young's modulus in psi
         E = 30.0e6
@@ -1177,12 +1195,16 @@ class MonteCarlo:
 
         #tool tolerances
         defectTol = {
-            "RosenF": {
+            "Rosen": {
                 "sdPDP": 0.78,   # in mm (0.78)
                 "sdL": 7.80      #in mm (7.80)
                 },
-            "Rosen": {
-                "sdPDP":sdDepthTool*WTm, #in mm
+            "RosenF": {
+                "sdPDP":np.where(WTm < 10, 0.117, 0.156)*WTm, #in mm
+                "sdL":15.61  #in mm
+                },
+            "Rosen3": {
+                "sdPDP":np.where(cPDP*WTm < 4, 0.780, 3.120), #in mm
                 "sdL":7.80  #in mm
                 },
             "PII": {
@@ -1191,28 +1213,11 @@ class MonteCarlo:
                 }
             }
 
-        tool_D = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII"],
-                            [defectTol["Rosen"]["sdPDP"],defectTol["RosenF"]["sdPDP"],defectTol["PII"]["sdPDP"]])
-        tool_L = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII"],
-                            [defectTol["Rosen"]["sdL"],defectTol["RosenF"]["sdL"],defectTol["PII"]["sdL"]])
+        tool_D = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII",vendor=='Rosen3'],
+                            [defectTol["Rosen"]["sdPDP"],defectTol["RosenF"]["sdPDP"],defectTol["PII"]["sdPDP"],defectTol["Rosen3"]["sdPDP"]])
+        tool_L = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII",vendor=='Rosen3'],
+                            [defectTol["Rosen"]["sdL"],defectTol["RosenF"]["sdL"],defectTol["PII"]["sdL"],defectTol["Rosen3"]["sdL"]])
 
-        ####Artificially added------------------------------
-        qc_list = [OD, WTm, Sm, Tm, OPm, Inst.values,
-                    cPDP, cL_measured, cW_measured, cstatus, ctype, cchainage]
-        qc_cols = ['OD_inch','WT_mm','grade_MPa','toughness_J','MAOP_kPa','install_date',
-                'depth_fraction','length_mm','width_mm','status','type','chainage_m']
-        qc_dict = dict()
-        qc_dict = {x:y for x,y in zip(qc_cols,qc_list)}
-        
-        qc_df = pd.DataFrame(qc_dict)
-        qc_df['E']=E
-        qc_df['fa']=fa
-        qc_df['Insp']=Insp
-        qc_df['vendor']=vendor
-        qc_df['tool']=tool
-        qc_df['tool_D']=tool_D
-        qc_df['tool_L']=tool_L
-        ####-----------------------------------------------
         
         #non-distributed variables
         OP = np.tile(OP, (n, 1))
@@ -1248,9 +1253,9 @@ class MonteCarlo:
         fsNaNs = np.extract(np.isnan(failStress),failStress)
         fsNaNs_count = fsNaNs.size
 
-        ruptures, rupture_count = ls_scc_rupture(failPress, OP, bulk=True)
+        ruptures, rupture_count = ls_scc_rupture(failPress, OP, thresh=self.rupt_thresh, bulk=True)
 
-        leaks, leak_count = ls_scc_leak(WTd, cD, bulk=True)
+        leaks, leak_count = ls_scc_leak(WTd, cD, thresh=self.leak_thresh, bulk=True)
 
         fails, fail_count = ls_crack_tot(ruptures, leaks, bulk=True)
 
@@ -1263,8 +1268,26 @@ class MonteCarlo:
                         "PDP_frac":cPDP,
                         "clength":cL_measured}
 
-        return_df = pd.DataFrame(return_dict)
+        ####Artificially added------------------------------
+        amt = 1000
+        qc_list = [ODd, WTd, Sdist, T, OP, np.tile(Inst.values, (n,1)),
+                    cD_run, cD, cD_GR, cL, failStress, failPress, ruptures, leaks, fails]
+        qc_cols = ['ODd', 'WTd', 'Sdist', 'T', 'OP', 'Inst',
+                    'cD_run', 'cD', 'cD_GR', 'cL', 'failStress', 'failPress', 'ruptures', 'leaks', 'fails']
+        qc_dict = dict()
+        qc_dict = {x:y[:amt,0] for x,y in zip(qc_cols,qc_list)}
+        
+        qc_df = pd.DataFrame(qc_dict)
+        qc_df.loc[:,'E']=E
+        qc_df.loc[:,'fa']=fa
+        qc_df.loc[:,'Insp']=Insp.values[0]
+        qc_df.loc[:,'vendor']=vendor[0]
+        qc_df.loc[:,'tool']=tool[0]
+        qc_df.loc[:,'tool_D']=tool_D[0]
+        qc_df.loc[:,'tool_L']=tool_L[0]
+        ####-----------------------------------------------
 
+        return_df = pd.DataFrame(return_dict)
         return return_df, qc_df
 
     def csccpoe(self, df,n):
@@ -1521,10 +1544,11 @@ class MonteCarlo:
 
 
 if __name__ == '__main__':
+        
     pd.set_option('display.max_columns',500)
-    scc = MonteCarlo('SCC')
+    config = dict(iterations=1_000_0)
+    scc = MonteCarlo('SCC', config=config)
     scc.get_data('sample_of_inputs.csv')
-    scc.set_iterations(1_000_0)
     scc.run(split_calculation=True, buffer_size=1500)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
