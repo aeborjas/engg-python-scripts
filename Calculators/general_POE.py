@@ -1559,10 +1559,10 @@ class MonteCarlo:
 if __name__ == '__main__':
         
     pd.set_option('display.max_columns',500)
-    config = dict(iterations=1_000_0)
+    config = dict(iterations=1_000)
     scc = MonteCarlo('SCC', config=config)
     scc.get_data('sample_of_inputs.csv')
-    scc.run(split_calculation=True, buffer_size=1500)
+    scc.run()
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
     # corr = StatisticalPOE(run_date='2019-12-31')
