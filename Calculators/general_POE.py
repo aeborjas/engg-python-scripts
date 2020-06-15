@@ -342,26 +342,39 @@ def ls_dent_fail(NF, n, bulk=False):
 	return fails, fail_count
 
 class StatisticalPOE:
-    def __init__(self,  run_date=None):
-        self.set_config(run_date)
+    def __init__(self,  config=None):
+        self.set_config(config)
         self.set_model()
         return None
 
-    def set_config(self,run_date=None,cgr='full-life'):
+    def set_config(self,config):
         """Allows to se the monte carlo run date to something other than current datetime
 
         Keyword Arguments:
             run_date {string} -- the date in YYYY-MM-DD format to set (default: {None})
         """
-        if run_date == None:
-            self.now = datetime.date.today()
+        if 'run_date' in config:
+            self.now = datetime.datetime.strptime(config['run_date'], '%Y-%m-%d').date()
         else:
-            self.now = datetime.datetime.strptime(run_date, '%Y-%m-%d').date()
-        
-        if cgr == 'full-life':
-            self.cgr_life_flag = 1.0
-        elif cgr == 'half-life':
-            self.cgr_life_flag = 2.0
+            self.now = datetime.date.today()
+
+        if 'leak_thresh' in config:
+            self.leak_thresh = config['leak_thresh']
+        else:
+            self.leak_thresh = 0.80
+
+        if 'rupt_thresh' in config:
+            self.rupt_thresh = config['rupt_thresh']
+        else:
+            self.rupt_thresh = 1.0
+
+        if 'cgr' in config:
+            if config['cgr'] == 'full-life':
+                self.cgr_life_flag = 1.0
+            elif cgr == 'half-life':
+                self.cgr_life_flag = 2.0
+            else:
+                self.cgr_life_flag = 1.0
         else:
             self.cgr_life_flag = 1.0
 
