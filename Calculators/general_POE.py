@@ -12,7 +12,7 @@ def random_prob_gen(x, iterations=1, features=1):
     temp=[]
     for var in range(x):
         temp.append(np.random.rand(iterations,features))
-    return np.array(temp)
+    return np.array(temp, dtype=np.float64)
 
 def ultimate_determiner(grade):
     """
@@ -643,8 +643,8 @@ class StatisticalPOE:
 class MonteCarlo:
     def __init__(self, model, config=None):
         self.model_type = model
-        self.set_model()
         self.set_config(config)
+        self.config_bck = config
         return None
 
     def set_config(self,config):
@@ -653,6 +653,13 @@ class MonteCarlo:
         Keyword Arguments:
             run_date {string} -- the date in YYYY-MM-DD format to set (default: {None})
         """
+        model_dict = {'CORR':self.corrpoe,
+                        'SCC':self.sccpoe,
+                        'MD':self.mdpoe,
+                        'RD':self.rdpoe,
+                        'CSCC':self.csccpoe}
+        self.model = model_dict[self.model_type]
+        
         if 'iterations' in config:
             self.iterations = config['iterations']
         else:
@@ -804,25 +811,11 @@ class MonteCarlo:
         indices = self.index_marks(self.df.shape[0], chunk_size)
         return np.split(self.df, indices)
 
-    def set_model(self):
-        """method used to specify which model to be ran
-
-        Returns:
-            None -- 
-        """        
-        model_dict = {'CORR':self.corrpoe,
-                        'SCC':self.sccpoe,
-                        'MD':self.mdpoe,
-                        'RD':self.rdpoe,
-                        'CSCC':self.csccpoe}
-        self.model = model_dict[self.model_type]
-        return None 
-
-    def run(self, split_calculation=False, buffer_size=1000):
+    def run(self, split_features=False, buffer_size=1000, split_iterations=False, iterations_split=100):
         """Method used to start the Monte Carlo run
 
         Keyword Arguments:
-            split_calculation {bool} -- Set to true, the calculation will use the buffer_size to split the instance dataframe by that number (default: {False})
+            split_features {bool} -- Set to true, the calculation will use the buffer_size to split the instance dataframe by that number (default: {False})
             buffer_size {int} -- value to split the instance dataframe (default: {1000})
 
         Returns:
@@ -833,12 +826,33 @@ class MonteCarlo:
         if hasattr(self,'result'):
             del self.result
 
-        if not(split_calculation):
+        # if (split_features) and (split_iterations):
+        #     raise AttributeError("Not possible to split calculation by features and by iterations. Please select only one.")
+
+        if not(split_iterations):
             self.result, self.qc = self.model(self.df,self.iterations)
         else:
-            self.result = [self.model(x,self.iterations)[0] for x in self.split_df(buffer_size)]
-            self.result = pd.concat(self.result)
+            split = self.iterations//iterations_split
+            if split >= self.iterations:
+                raise AttributeError("Please select a higher number to split iterations.")
+            remainder = self.iterations - split*iterations_split
+            if remainder == 0:
+                iter_list = [split]*iterations_split
+            else:
+                iter_list = [split]*iterations_split + [remainder]
+            update_cols = ['fail_count','iterations','rupture_count','leak_count','nan']
+            self.result, self.qc = self.model(self.df,iter_list.pop())
+            for count in iter_list:
+                self.result[update_cols] = self.result[update_cols] + self.model(self.df,count)[0][update_cols]
+
             self.qc = None
+
+        # if not(split_features):
+        #     self.result, self.qc = self.model(self.df,self.iterations)
+        # else:
+        #     self.result = [self.model(x,self.iterations)[0] for x in self.split_df(buffer_size)]
+        #     self.result = pd.concat(self.result)
+        #     self.qc = None
 
         self.result["POE"] = self.result["fail_count"] / self.result["iterations"]
         self.result["POE_l"] = self.result["leak_count"] / self.result["iterations"]
@@ -850,10 +864,15 @@ class MonteCarlo:
         print(f"Model: {self.model_type} POE Simulation")
 
         print(f"Count of anomalies: {self.df.shape[0]}")
-        print(f"Iterations: {self.iterations:,}")
+        if split_iterations:
+            print(f"Iterations: {split*iterations_split + remainder:,}")
+        else:
+            print(f"Iterations: {self.iterations:,}")
         print(f"Date of analysis: {self.now}")
-        print(f"Weibull Shape: {self.weibull_shape}")
-        print(f"Weibull Scale: {self.weibull_scale}")
+        if 'weibull_shape' in self.config_bck:
+            print(f"Weibull Shape: {self.weibull_shape}")
+        if 'weibull_scale' in self.config_bck:
+            print(f"Weibull Scale: {self.weibull_scale}")
         print(f"Leak threshold modifier: {self.leak_thresh}")
         print(f"Rupture threshold modifier: {self.rupt_thresh}")
 
@@ -886,15 +905,13 @@ class MonteCarlo:
         fstatus = df['status'].values
         ftype = df['type'].values
         fids = df['FeatureID'].values
+        surface = df['ILIFSurfaceInd'].values
 
         vendor = df['vendor'].values
         tool = df['tool'].values
         Insp = df['ILIRStartDate']
 
         time_delta = ((self.now - Insp).dt.days.values) / 365.25
-
-        # Growth Rate mechanism
-        mechanism = "weibull"
 
         # CGA # MPY (mili inches per year)
         CGR_CGA_MPY = 10  
@@ -952,21 +969,27 @@ class MonteCarlo:
         # feature depth in inches
         fD_run = np.maximum(0, norm.ppf(fD_n_6, loc=fPDP * WT * 1.0, scale=tool_D * WT))
 
-        if mechanism == "CGA":
-            fD_GR = cgr_mpy(CGR_CGA_MPY)
-        elif mechanism == "weibull":
-            fD_GR = cgr_weibull(fGR_n_7, shape, scale) / 25.4
-        elif mechanism == "logic":
-            if time_delta >= 20:
-                fD_GR = half_life(fD_run, Inst, Insp)
-            else:
-                fD_GR = pct_wt(WTd)
-        elif mechanism == "half-life":
-            fD_GR = half_life(fD_run, Inst, Insp)  # fD_run is in inches
-        elif mechanism == "2.2%WT":
-            fD_GR = pct_wt(WTd)
-        else:
-            raise Exception("Please select a valid mechanism: half-life | 2.2%WT | CGA | logic | weibull")
+        # # Growth Rate mechanism
+        # mechanism = "weibull"
+
+        # if mechanism == "CGA":
+        #     fD_GR = cgr_mpy(CGR_CGA_MPY)
+        # elif mechanism == "weibull":
+        #     fD_GR = cgr_weibull(fGR_n_7, shape, scale) / 25.4
+        # elif mechanism == "logic":
+        #     if time_delta >= 20:
+        #         fD_GR = half_life(fD_run, Inst, Insp)
+        #     else:
+        #         fD_GR = pct_wt(WTd)
+        # elif mechanism == "half-life":
+        #     fD_GR = half_life(fD_run, Inst, Insp)  # fD_run is in inches
+        # elif mechanism == "2.2%WT":
+        #     fD_GR = pct_wt(WTd)
+        # else:
+        #     raise Exception("Please select a valid mechanism: half-life | 2.2%WT | CGA | logic | weibull")
+
+        fD_GR = np.where(surface == 'E', cgr_weibull(fGR_n_7, 1.6073, 0.1) / 25.4,
+                                        cgr_weibull(fGR_n_7, 3.2962, 0.1) / 25.4)
 
         fD = fD_run + fD_GR * time_delta
 
@@ -1282,26 +1305,26 @@ class MonteCarlo:
                         "clength":cL_measured}
 
         ####Artificially added------------------------------
-        amt = 1000
-        qc_list = [ODd, WTd, Sdist, T, OP, np.tile(Inst.values, (n,1)),
-                    cD_run, cD, cD_GR, cL, failStress, failPress, ruptures, leaks, fails]
-        qc_cols = ['ODd', 'WTd', 'Sdist', 'T', 'OP', 'Inst',
-                    'cD_run', 'cD', 'cD_GR', 'cL', 'failStress', 'failPress', 'ruptures', 'leaks', 'fails']
-        qc_dict = dict()
-        qc_dict = {x:y[:amt,0] for x,y in zip(qc_cols,qc_list)}
+        # amt = 1000
+        # qc_list = [ODd, WTd, Sdist, T, OP, np.tile(Inst.values, (n,1)),
+        #             cD_run, cD, cD_GR, cL, failStress, failPress, ruptures, leaks, fails]
+        # qc_cols = ['ODd', 'WTd', 'Sdist', 'T', 'OP', 'Inst',
+        #             'cD_run', 'cD', 'cD_GR', 'cL', 'failStress', 'failPress', 'ruptures', 'leaks', 'fails']
+        # qc_dict = dict()
+        # qc_dict = {x:y[:amt,0] for x,y in zip(qc_cols,qc_list)}
         
-        qc_df = pd.DataFrame(qc_dict)
-        qc_df.loc[:,'E']=E
-        qc_df.loc[:,'fa']=fa
-        qc_df.loc[:,'Insp']=Insp.values[0]
-        qc_df.loc[:,'vendor']=vendor[0]
-        qc_df.loc[:,'tool']=tool[0]
-        qc_df.loc[:,'tool_D']=tool_D[0]
-        qc_df.loc[:,'tool_L']=tool_L[0]
+        # qc_df = pd.DataFrame(qc_dict)
+        # qc_df.loc[:,'E']=E
+        # qc_df.loc[:,'fa']=fa
+        # qc_df.loc[:,'Insp']=Insp.values[0]
+        # qc_df.loc[:,'vendor']=vendor[0]
+        # qc_df.loc[:,'tool']=tool[0]
+        # qc_df.loc[:,'tool_D']=tool_D[0]
+        # qc_df.loc[:,'tool_L']=tool_L[0]
         ####-----------------------------------------------
 
         return_df = pd.DataFrame(return_dict)
-        return return_df, qc_df
+        return return_df, None
 
     def csccpoe(self, df,n):
         pivar = np.pi
@@ -1557,12 +1580,16 @@ class MonteCarlo:
 
 
 if __name__ == '__main__':
-        
+
     pd.set_option('display.max_columns',500)
-    config = dict(iterations=1_000)
+
+    config = dict(iterations=1_000_0,)
     scc = MonteCarlo('SCC', config=config)
+    
     scc.get_data('sample_of_inputs.csv')
+    scc.df = scc.df.iloc[0:10]
     scc.run()
+    print(scc.result)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
     # corr = StatisticalPOE(run_date='2019-12-31')
