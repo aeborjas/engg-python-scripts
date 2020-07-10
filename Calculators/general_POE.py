@@ -642,12 +642,12 @@ class StatisticalPOE:
 
 class MonteCarlo:
     def __init__(self, model, config=None):
-        self.model_type = model
-        self.set_config(config)
-        self.config_bck = config
+        self.config = config
+        self.config['model'] = model
+        self.set_config()
         return None
 
-    def set_config(self,config):
+    def set_config(self):
         """Allows to se the monte carlo run date to something other than current datetime
 
         Keyword Arguments:
@@ -658,35 +658,40 @@ class MonteCarlo:
                         'MD':self.mdpoe,
                         'RD':self.rdpoe,
                         'CSCC':self.csccpoe}
-        self.model = model_dict[self.model_type]
+        self.model = model_dict[self.config['model']]
         
-        if 'iterations' in config:
-            self.iterations = config['iterations']
+        if 'cgr' in self.config:
+            self.custom_cgr = self.config['cgr']
+        else:
+            self.custom_cgr = None
+
+        if 'iterations' in self.config:
+            self.iterations = self.config['iterations']
         else:
             self.iterations = 10
 
-        if 'run_date' in config:
-            self.now = datetime.datetime.strptime(config['run_date'], '%Y-%m-%d').date()
+        if 'run_date' in self.config:
+            self.now = datetime.datetime.strptime(self.config['run_date'], '%Y-%m-%d').date()
         else:
             self.now = datetime.date.today()
 
-        if 'weibull_shape' in config:
-            self.weibull_shape = config['weibull_shape']
+        if 'weibull_shape' in self.config:
+            self.weibull_shape = self.config['weibull_shape']
         else:
             self.weibull_shape = 1.439
 
-        if 'weibull_scale' in config:
-            self.weibull_scale = config['weibull_scale']
+        if 'weibull_scale' in self.config:
+            self.weibull_scale = self.config['weibull_scale']
         else:
             self.weibull_scale = 0.1
 
         if 'leak_thresh' in config:
-            self.leak_thresh = config['leak_thresh']
+            self.leak_thresh = self.config['leak_thresh']
         else:
             self.leak_thresh = 0.80
 
-        if 'rupt_thresh' in config:
-            self.rupt_thresh = config['rupt_thresh']
+        if 'rupt_thresh' in self.config:
+            self.rupt_thresh = self.config['rupt_thresh']
         else:
             self.rupt_thresh = 1.0
 
@@ -861,7 +866,7 @@ class MonteCarlo:
         self.result["1-POE"] = 1 - self.result["POE"]
         agg_POE = 1 - np.prod(self.result["1-POE"])       
 
-        print(f"Model: {self.model_type} POE Simulation")
+        print(f"Model: {self.config['model']} POE Simulation")
 
         print(f"Count of anomalies: {self.df.shape[0]}")
         if split_iterations:
@@ -869,9 +874,9 @@ class MonteCarlo:
         else:
             print(f"Iterations: {self.iterations:,}")
         print(f"Date of analysis: {self.now}")
-        if 'weibull_shape' in self.config_bck:
+        if 'weibull_shape' in self.config:
             print(f"Weibull Shape: {self.weibull_shape}")
-        if 'weibull_scale' in self.config_bck:
+        if 'weibull_scale' in self.config:
             print(f"Weibull Scale: {self.weibull_scale}")
         print(f"Leak threshold modifier: {self.leak_thresh}")
         print(f"Rupture threshold modifier: {self.rupt_thresh}")
@@ -915,9 +920,7 @@ class MonteCarlo:
         Insp = df['ILIRStartDate']
 
         time_delta = ((self.now - Insp).dt.days.values) / 365.25
-
-        # CGA # MPY (mili inches per year)
-        CGR_CGA_MPY = 10  
+        ILI_age = ((Insp - Inst).dt.days.values) / 365.25
 
         # weibull Distribution parameters
         shape = self.weibull_shape
@@ -972,25 +975,6 @@ class MonteCarlo:
         # feature depth in inches
         fD_run = np.maximum(0, norm.ppf(fD_n_6, loc=fPDP * WT * 1.0, scale=tool_D * WT))
 
-        # # Growth Rate mechanism
-        # mechanism = "weibull"
-
-        # if mechanism == "CGA":
-        #     fD_GR = cgr_mpy(CGR_CGA_MPY)
-        # elif mechanism == "weibull":
-        #     fD_GR = cgr_weibull(fGR_n_7, shape, scale) / 25.4
-        # elif mechanism == "logic":
-        #     if time_delta >= 20:
-        #         fD_GR = half_life(fD_run, Inst, Insp)
-        #     else:
-        #         fD_GR = pct_wt(WTd)
-        # elif mechanism == "half-life":
-        #     fD_GR = half_life(fD_run, Inst, Insp)  # fD_run is in inches
-        # elif mechanism == "2.2%WT":
-        #     fD_GR = pct_wt(WTd)
-        # else:
-        #     raise Exception("Please select a valid mechanism: half-life | 2.2%WT | CGA | logic | weibull")
-
         ## custom corrosion growth rate modelling input
         # def cgr(**kwargs):
         #     # alpha = kwargs['vcgr']/kwargs['vcgr_sd']
@@ -1002,9 +986,10 @@ class MonteCarlo:
         #                     cgr_weibull(kwargs['random'], 1.6073, 0.1) / 25.4,
         #                     cgr_weibull(kwargs['random'], 3.2962, 0.1) / 25.4)
         # fD_GR = cgr(surface=surface, random=fGR_n_7, vcgr=vendor_cgr, vcgr_sd=vendor_cgr_sd)
+        fD_GR = self.config['cgr'](surface=surface, random=fGR_n_7, depth=fD_run, ILI_age=ILI_age, vcgr=vendor_cgr, vcgr_sd=vendor_cgr_sd)
 
         ## default CGR methodology.
-        fD_GR = cgr_weibull(fGR_n_7, shape, scale) / 25.4
+        # fD_GR = cgr_weibull(fGR_n_7, shape, scale) / 25.4
 
         fD = fD_run + fD_GR * time_delta
 
@@ -1598,13 +1583,25 @@ if __name__ == '__main__':
 
     pd.set_option('display.max_columns',500)
 
-    config = dict(iterations=1_000_0,)
-    scc = MonteCarlo('SCC', config=config)
+    def cgr(**kwargs):
+        # alpha = kwargs['vcgr']/kwargs['vcgr_sd']
+        # return np.where(alpha > 3.0,
+        #                 np.maximum(0, norm.ppf(kwargs['random'], loc=kwargs['vcgr'], scale=kwargs['vcgr_sd']))/25.4,
+        #                 np.where(kwargs['surface'] == 'E', cgr_weibull(kwargs['random'], 1.6073, 0.1) / 25.4,
+        #                             cgr_weibull(kwargs['random'], 3.2962, 0.1) / 25.4))
+        # return np.where(kwargs['surface'] == 'E',
+        #             cgr_weibull(kwargs['random'], 1.6073, 0.1) / 25.4,
+        #             cgr_weibull(kwargs['random'], 3.2962, 0.1) / 25.4)
+        # return 12.5/1000.
+        return kwargs['depth']/kwargs['ILI_age']
+
+    config = dict(iterations=1_000_0,cgr=cgr)
+    corr = MonteCarlo('CORR', config=config)
     
-    scc.get_data('sample_of_inputs.csv')
-    scc.df = scc.df.iloc[0:10]
-    scc.run()
-    print(scc.result)
+    corr.get_data('sample_of_inputs.csv')
+    corr.df = corr.df.iloc[0:10]
+    corr.run()
+    print(corr.result)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
     # corr = StatisticalPOE(run_date='2019-12-31')
