@@ -906,6 +906,9 @@ class MonteCarlo:
         ftype = df['type'].values
         fids = df['FeatureID'].values
         surface = df['ILIFSurfaceInd'].values
+        vendor_cgr = df['vendor_cgr_mmpyr'].values
+        df['vendor_cgr_sd'] = df['vendor_cgr_sd'].fillna(df['vendor_cgr_mmpyr']*0.10)
+        vendor_cgr_sd = df['vendor_cgr_sd'].values
 
         vendor = df['vendor'].values
         tool = df['tool'].values
@@ -947,9 +950,9 @@ class MonteCarlo:
         }
 
         tool_D = np.select([vendor =="Rosen",vendor=="RosenF"],
-                            [defectTol["Rosen"]["sdPDP"],defectTol["RosenF"]["sdPDP"]])
+                            [defectTol["Rosen"]["sdPDP"],defectTol["RosenF"]["sdPDP"]], default=0.078)
         tool_L = np.select([vendor =="Rosen",vendor=="RosenF"],
-                            [defectTol["Rosen"]["sdL"],defectTol["RosenF"]["sdL"]])
+                            [defectTol["Rosen"]["sdL"],defectTol["RosenF"]["sdL"]], default=0.61)
 
         # non-distributed variables
         OD = np.tile(OD, (n, 1)) 
@@ -988,8 +991,20 @@ class MonteCarlo:
         # else:
         #     raise Exception("Please select a valid mechanism: half-life | 2.2%WT | CGA | logic | weibull")
 
-        fD_GR = np.where(surface == 'E', cgr_weibull(fGR_n_7, 1.6073, 0.1) / 25.4,
-                                        cgr_weibull(fGR_n_7, 3.2962, 0.1) / 25.4)
+        ## custom corrosion growth rate modelling input
+        # def cgr(**kwargs):
+        #     # alpha = kwargs['vcgr']/kwargs['vcgr_sd']
+        #     # return np.where(alpha > 3.0,
+        #     #                 np.maximum(0, norm.ppf(kwargs['random'], loc=kwargs['vcgr'], scale=kwargs['vcgr_sd']))/25.4,
+        #     #                 np.where(kwargs['surface'] == 'E', cgr_weibull(kwargs['random'], 1.6073, 0.1) / 25.4,
+        #     #                             cgr_weibull(kwargs['random'], 3.2962, 0.1) / 25.4))
+        #     return np.where(kwargs['surface'] == 'E',
+        #                     cgr_weibull(kwargs['random'], 1.6073, 0.1) / 25.4,
+        #                     cgr_weibull(kwargs['random'], 3.2962, 0.1) / 25.4)
+        # fD_GR = cgr(surface=surface, random=fGR_n_7, vcgr=vendor_cgr, vcgr_sd=vendor_cgr_sd)
+
+        ## default CGR methodology.
+        fD_GR = cgr_weibull(fGR_n_7, shape, scale) / 25.4
 
         fD = fD_run + fD_GR * time_delta
 
