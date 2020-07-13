@@ -685,7 +685,7 @@ class MonteCarlo:
         else:
             self.weibull_scale = 0.1
 
-        if 'leak_thresh' in config:
+        if 'leak_thresh' in self.config:
             self.leak_thresh = self.config['leak_thresh']
         else:
             self.leak_thresh = 0.80
