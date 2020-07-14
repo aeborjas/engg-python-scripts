@@ -659,11 +659,6 @@ class MonteCarlo:
                         'RD':self.rdpoe,
                         'CSCC':self.csccpoe}
         self.model = model_dict[self.config['model']]
-        
-        if 'cgr' in self.config:
-            self.custom_cgr = self.config['cgr']
-        else:
-            self.custom_cgr = None
 
         if 'iterations' in self.config:
             self.iterations = self.config['iterations']
@@ -922,10 +917,6 @@ class MonteCarlo:
         time_delta = ((self.now - Insp).dt.days.values) / 365.25
         ILI_age = ((Insp - Inst).dt.days.values) / 365.25
 
-        # weibull Distribution parameters
-        shape = self.weibull_shape
-        scale = self.weibull_scale
-
         def model_error(p):
             return 0.914 + gamma.ppf(p, 2.175, scale=0.225)
 
@@ -975,21 +966,16 @@ class MonteCarlo:
         # feature depth in inches
         fD_run = np.maximum(0, norm.ppf(fD_n_6, loc=fPDP * WT * 1.0, scale=tool_D * WT))
 
-        ## custom corrosion growth rate modelling input
-        # def cgr(**kwargs):
-        #     # alpha = kwargs['vcgr']/kwargs['vcgr_sd']
-        #     # return np.where(alpha > 3.0,
-        #     #                 np.maximum(0, norm.ppf(kwargs['random'], loc=kwargs['vcgr'], scale=kwargs['vcgr_sd']))/25.4,
-        #     #                 np.where(kwargs['surface'] == 'E', cgr_weibull(kwargs['random'], 1.6073, 0.1) / 25.4,
-        #     #                             cgr_weibull(kwargs['random'], 3.2962, 0.1) / 25.4))
-        #     return np.where(kwargs['surface'] == 'E',
-        #                     cgr_weibull(kwargs['random'], 1.6073, 0.1) / 25.4,
-        #                     cgr_weibull(kwargs['random'], 3.2962, 0.1) / 25.4)
-        # fD_GR = cgr(surface=surface, random=fGR_n_7, vcgr=vendor_cgr, vcgr_sd=vendor_cgr_sd)
-        fD_GR = self.config['cgr'](surface=surface, random=fGR_n_7, depth=fD_run, ILI_age=ILI_age, vcgr=vendor_cgr, vcgr_sd=vendor_cgr_sd)
+        # weibull Distribution parameters
+        shape = self.weibull_shape
+        scale = self.weibull_scale
 
+        ## custom corrosion growth rate modelling input
+        if 'cgr' in self.config:
+            fD_GR = self.config['cgr'](surface=surface, random=fGR_n_7, depth=fD_run, ILI_age=ILI_age, vcgr=vendor_cgr, vcgr_sd=vendor_cgr_sd)
+        else:
         ## default CGR methodology.
-        # fD_GR = cgr_weibull(fGR_n_7, shape, scale) / 25.4
+            fD_GR = cgr_weibull(fGR_n_7, shape, scale) / 25.4
 
         fD = fD_run + fD_GR * time_delta
 
