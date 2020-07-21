@@ -192,7 +192,7 @@ def nf_EPRG(od, wt, uts, dL, dW, dD, gD, MAX, MIN, sf=1.0, units="SI"):
 
     return NF
 
-def ls_corr_rupture(fail_pressure, operating_pressure, thresh=1.0, bulk=False):
+def ls_rupture(operating_pressure, fail_pressure, thresh=1.0, bulk=False):
     """
     Limit state for rupture failure mode of corrosion
     :param fail_pressure: failure pressure, in kPa (SI), or psi (US)
@@ -211,7 +211,7 @@ def ls_corr_rupture(fail_pressure, operating_pressure, thresh=1.0, bulk=False):
         rupture_count = np.sum(ruptures)
     return ruptures, rupture_count
 
-def ls_corr_leak(wt, fD, thresh=0.8, bulk=False):
+def ls_leak(wt, fD, thresh=0.8, bulk=False):
     """
     Limit state for leak failure mode of corrosion
     :param wt: pipe wall thickness, in mm (SI), or inch (US)
@@ -231,96 +231,7 @@ def ls_corr_leak(wt, fD, thresh=0.8, bulk=False):
         leak_count = np.sum(leaks)
     return leaks, leak_count
 
-def ls_corr_tot(fail_1, fail_2, bulk=False):
-
-    fails = np.maximum(fail_1, fail_2)
-    if bulk:
-
-        fail_count = np.sum(fails, axis=0)
-    else:
-
-        fail_count = np.sum(fails)
-    return fails, fail_count
-
-def ls_scc_rupture(fail_pressure, operating_pressure, thresh=1.0, bulk=False):
-    """
-    Limit state for rupture failure mode of crackosion
-    :param fail_pressure: failure pressure, in kPa (SI), or psi (US)
-    :param operating_pressure: operating pressure, in kPa (SI), or psi (US)
-    :param bulk: Flag for applying limit state on a bulk basis, default is False
-    :return: returns array(s) of 1's and 0's, where 1 indicates a failure, and 0 indicates no failure
-    """
-
-    ruptures = fail_pressure <= thresh * operating_pressure
-    ruptures = ruptures.astype(int)
-    if bulk:
-
-        rupture_count = np.sum(ruptures, axis=0)
-    else:
-
-        rupture_count = np.sum(ruptures)
-    return ruptures, rupture_count
-
-def ls_scc_leak(wt, fD, thresh=0.8, bulk=False):
-    """
-    Limit state for leak failure mode of crackosion
-    :param wt: pipe wall thickness, in mm (SI), or inch (US)
-    :param fD: feature depth, in mm (SI), or inch (US)
-    :param thresh: leak threshold, in fraction, default of 0.80
-    :param bulk: Flag for applying limit state on a bulk basis, default is False
-    :return: returns array(s) of 1's and 0's where 1 indicates a failure, and 0 indicates no failure
-    """
-
-    leaks = fD >= thresh * wt
-    leaks = leaks.astype(int)
-    if bulk:
- 
-        leak_count = np.sum(leaks, axis=0)
-    else:
-
-        leak_count = np.sum(leaks)
-    return leaks, leak_count
-
-def ls_md_rupture(fail_pressure, operating_pressure, thresh=1.0, bulk=False):
-    """
-    Limit state for rupture failure mode of crackosion
-    :param fail_pressure: failure pressure, in kPa (SI), or psi (US)
-    :param operating_pressure: operating pressure, in kPa (SI), or psi (US)
-    :param bulk: Flag for applying limit state on a bulk basis, default is False
-    :return: returns array(s) of 1's and 0's, where 1 indicates a failure, and 0 indicates no failure
-    """
-
-    ruptures = fail_pressure <= thresh*operating_pressure
-    ruptures = ruptures.astype(int)
-    if bulk:
- 
-        rupture_count = np.sum(ruptures, axis=0)
-    else:
-
-        rupture_count = np.sum(ruptures)
-    return ruptures, rupture_count
-
-def ls_md_leak(wt, fD, thresh=0.8, bulk=False):
-    """
-    Limit state for leak failure mode of crackosion
-    :param wt: pipe wall thickness, in mm (SI), or inch (US)
-    :param fD: feature depth, in mm (SI), or inch (US)
-    :param thresh: leak threshold, in fraction, default of 0.80
-    :param bulk: Flag for applying limit state on a bulk basis, default is False
-    :return: returns array(s) of 1's and 0's where 1 indicates a failure, and 0 indicates no failure
-    """
-
-    leaks = fD >= thresh * wt
-    leaks = leaks.astype(int)
-    if bulk:
-
-        leak_count = np.sum(leaks, axis=0)
-    else:
-
-        leak_count = np.sum(leaks)
-    return leaks, leak_count
-
-def ls_crack_tot(fail_1, fail_2, bulk=False):
+def ls_total(fail_1, fail_2, bulk=False):
 
     fails = np.maximum(fail_1, fail_2)
     if bulk:
@@ -657,7 +568,8 @@ class MonteCarlo:
                         'SCC':self.sccpoe,
                         'MD':self.mdpoe,
                         'RD':self.rdpoe,
-                        'CSCC':self.csccpoe}
+                        'CSCC':self.csccpoe,
+                        'MC':self.mcpoe}
         self.model = model_dict[self.config['model']]
 
         if 'iterations' in self.config:
@@ -880,6 +792,78 @@ class MonteCarlo:
         print(f"Calculation took {time.time()-t1:.4f} seconds.")
         return None
 
+
+    def special_run(self, split_features=False, buffer_size=1000, split_iterations=False, iterations_split=100):
+        """Method used to start the Monte Carlo run
+
+        Keyword Arguments:
+            split_features {bool} -- Set to true, the calculation will use the buffer_size to split the instance dataframe by that number (default: {False})
+            buffer_size {int} -- value to split the instance dataframe (default: {1000})
+
+        Returns:
+            None -- 
+        """        
+        t1 = time.time()
+
+        if hasattr(self,'result'):
+            del self.result
+
+        # if (split_features) and (split_iterations):
+        #     raise AttributeError("Not possible to split calculation by features and by iterations. Please select only one.")
+
+        if not(split_iterations):
+            self.result, self.qc = self.mcpoe(self.df,self.iterations)
+        else:
+            split = self.iterations//iterations_split
+            if split >= self.iterations:
+                raise AttributeError("Please select a higher number to split iterations.")
+            remainder = self.iterations - split*iterations_split
+            if remainder == 0:
+                iter_list = [split]*iterations_split
+            else:
+                iter_list = [split]*iterations_split + [remainder]
+            update_cols = ['fail_count','iterations','rupture_count','leak_count','nan']
+            self.result, self.qc = self.mcpoe(self.df,iter_list.pop())
+            for count in iter_list:
+                self.result[update_cols] = self.result[update_cols] + self.mcpoe(self.df,count)[0][update_cols]
+
+            self.qc = None
+
+        # if not(split_features):
+        #     self.result, self.qc = self.model(self.df,self.iterations)
+        # else:
+        #     self.result = [self.model(x,self.iterations)[0] for x in self.split_df(buffer_size)]
+        #     self.result = pd.concat(self.result)
+        #     self.qc = None
+
+        self.result["POE"] = self.result["fail_count"] / self.result["iterations"]
+        self.result["POE_l"] = self.result["leak_count"] / self.result["iterations"]
+        self.result["POE_r"] = self.result["rupture_count"] / self.result["iterations"]
+
+        self.result["1-POE"] = 1 - self.result["POE"]
+        agg_POE = 1 - np.prod(self.result["1-POE"])       
+
+        print(f"Model: {self.config['model']} POE Simulation")
+
+        print(f"Count of anomalies: {self.df.shape[0]}")
+        if split_iterations:
+            print(f"Iterations: {split*iterations_split + remainder:,}")
+        else:
+            print(f"Iterations: {self.iterations:,}")
+        print(f"Date of analysis: {self.now}")
+        if 'weibull_shape' in self.config:
+            print(f"Weibull Shape: {self.weibull_shape}")
+        if 'weibull_scale' in self.config:
+            print(f"Weibull Scale: {self.weibull_scale}")
+        print(f"Leak threshold modifier: {self.leak_thresh}")
+        print(f"Rupture threshold modifier: {self.rupt_thresh}")
+
+        print("Aggregated POE for these features is {}.\n".format(agg_POE))
+        print(f"Calculation took {time.time()-t1:.4f} seconds.")
+        return None
+
+
+
     def merge_result(self, key):
         return self.result.merge(self.df, on=key)
 
@@ -987,11 +971,11 @@ class MonteCarlo:
         # Failure pressure in psi
         failPress = 2 * failure_stress * WTd / OD
 
-        ruptures, rupture_count = ls_corr_rupture(failPress, OP, thresh=self.rupt_thresh, bulk=True)
+        ruptures, rupture_count = ls_rupture(OP, failPress, thresh=self.rupt_thresh, bulk=True)
 
-        leaks, leak_count = ls_corr_leak(WTd, fD, thresh=self.leak_thresh, bulk=True)
+        leaks, leak_count = ls_leak(WTd, fD, thresh=self.leak_thresh, bulk=True)
 
-        fails, fail_count = ls_corr_tot(ruptures, leaks, bulk=True)
+        fails, fail_count = ls_total(ruptures, leaks, bulk=True)
 
         # Perhaps can turn the next section into a triggerable function.
         # Function would take in inputs that the user desires to create an export of, and fire off a csv
@@ -1053,6 +1037,9 @@ class MonteCarlo:
         cstatus = df['status'].values
         ctype = df['type'].values
         cids = df['FeatureID'].values
+        vendor_cgr = df['vendor_cgr_mmpyr'].values
+        df['vendor_cgr_sd'] = df['vendor_cgr_sd'].fillna(df['vendor_cgr_mmpyr']*0.10)
+        vendor_cgr_sd = df['vendor_cgr_sd'].values
 
         vendor = df['vendor'].values
         tool = df['tool'].values
@@ -1115,7 +1102,7 @@ class MonteCarlo:
         #distributed variables
         np.random.seed()
 
-        OD_n_1, WT_n_2, S_n_3, Y_n_4, cL_n_5, cD_n_6 = random_prob_gen(6, iterations=n, features=i)
+        OD_n_1, WT_n_2, S_n_3, Y_n_4, cL_n_5, cD_n_6, cGR_n_7, cGRL_n_8 = random_prob_gen(8, iterations=n, features=i)
 
         #distributed variables imperial
         ODd = norm.ppf(OD_n_1, loc=OD*meanOD, scale=OD*sdOD)
@@ -1125,12 +1112,26 @@ class MonteCarlo:
 
         #crack length in inches
         cL_run = np.maximum(1, norm.ppf(cL_n_5, loc=cL_measured * 1.0, scale=tool_L)) / 25.4
-        # cL_GR = cL_run/ILI_age
-        cL = cL_run +  0*time_delta
+        
+        ## custom MD growth rate modelling input
+        if 'lcgr' in self.config:
+            cL_GR = self.config['lcgr'](surface=None, random=cGRL_n_8, depth=cL_run, ILI_age=ILI_age, vcgr=vendor_cgr, vcgr_sd=vendor_cgr_sd)
+        else:
+            ## default CGR methodology.
+            cL_GR = 2*cL_run/ILI_age
+        
+        cL = cL_run +  cL_GR*time_delta
 
         #Crack detpth in inches
         cD_run = np.maximum(0, norm.ppf(cD_n_6, loc=cPDP*WTm*1.0, scale=tool_D))/25.4
-        cD_GR = cD_run/ILI_age
+        
+        ## custom MD growth rate modelling input
+        if 'cgr' in self.config:
+            cD_GR = self.config['cgr'](surface=None, random=cGR_n_7, depth=cD_run, ILI_age=ILI_age, vcgr=vendor_cgr, vcgr_sd=vendor_cgr_sd)
+        else:
+        ## default CGR methodology.
+            cD_GR = 2*cD_run/ILI_age
+        
         cD = cD_run +  cD_GR*time_delta
 
         failStress = modified_lnsec(ODd, WTd, Sdist, T, Ydist, cL, cD, units="US")
@@ -1141,11 +1142,11 @@ class MonteCarlo:
         fsNaNs = np.extract(np.isnan(failStress),failStress)
         fsNaNs_count = fsNaNs.size
 
-        ruptures, rupture_count = ls_md_rupture(failPress, OP, thresh=self.rupt_thresh, bulk=True)
+        ruptures, rupture_count = ls_rupture(OP, failPress, thresh=self.rupt_thresh, bulk=True)
 
-        leaks, leak_count = ls_md_leak(WTd, cD, thresh=self.leak_thresh, bulk=True)
+        leaks, leak_count = ls_leak(WTd, cD, thresh=self.leak_thresh, bulk=True)
 
-        fails, fail_count = ls_crack_tot(ruptures, leaks, bulk=True)
+        fails, fail_count = ls_total(ruptures, leaks, bulk=True)
 
         return_dict = {"FeatureID":cids,
                     "fail_count":fail_count,
@@ -1275,11 +1276,11 @@ class MonteCarlo:
         fsNaNs = np.extract(np.isnan(failStress),failStress)
         fsNaNs_count = fsNaNs.size
 
-        ruptures, rupture_count = ls_scc_rupture(failPress, OP, thresh=self.rupt_thresh, bulk=True)
+        ruptures, rupture_count = ls_rupture(OP, failPress, thresh=self.rupt_thresh, bulk=True)
 
-        leaks, leak_count = ls_scc_leak(WTd, cD, thresh=self.leak_thresh, bulk=True)
+        leaks, leak_count = ls_leak(WTd, cD, thresh=self.leak_thresh, bulk=True)
 
-        fails, fail_count = ls_crack_tot(ruptures, leaks, bulk=True)
+        fails, fail_count = ls_total(ruptures, leaks, bulk=True)
 
         return_dict = {"FeatureID":cids,
                     "fail_count":fail_count,
@@ -1331,7 +1332,7 @@ class MonteCarlo:
         vendor = df['tool'].values
         Insp = df['ILIRStartDate']
 
-        time_delta = ((now-Insp).dt.days.values)/365.25
+        time_delta = ((self.now-Insp).dt.days.values)/365.25
 
         # Unit conversion to metric
         OD = OD*25.4
@@ -1391,26 +1392,26 @@ class MonteCarlo:
         cD = cD_run + cD_GR*(time_delta)
 
         depth_thresh = 0.6
-        depth_fails = cD >= depth_thresh*WTd
-        depth_fails = depth_fails.astype(int)
+        leaks = cD >= depth_thresh*WTd
+        leaks = leaks.astype(int)
         
         circ_thresh = 0.4
         circ_thresh_depth = 0.4
-        circ_fails = (cL >= circ_thresh*pivar*ODd) & (cD >= circ_thresh_depth*WTd)
-        circ_fails = circ_fails.astype(int)
+        ruptures = (cL >= circ_thresh*pivar*ODd) & (cD >= circ_thresh_depth*WTd)
+        ruptures = ruptures.astype(int)
 
-        fails = np.maximum(depth_fails,circ_fails)
+        fails = np.maximum(leaks,ruptures)
         fails = fails.astype(int)
 
         fail_count = np.sum(fails, axis=0)
-        depth_count = np.sum(depth_fails, axis=0)
-        circ_count = np.sum(circ_fails, axis=0)
+        leak_count = np.sum(leaks, axis=0)
+        rupture_count = np.sum(ruptures, axis=0)
 
         return_dict = {"FeatureID":cids,
                         "fail_count":fail_count,
                         "iterations":np.size(fails, axis=0),
-                        'depth_count':depth_count,
-                        'circ_count':circ_count,
+                        'leak_count':leak_count,
+                        'rupture_count':rupture_count,
                         "PDP_frac":cPDP,
                         "clength":cL_measured}
 
@@ -1564,15 +1565,388 @@ class MonteCarlo:
         
         return return_df, qc_df
 
+    def mcpoe(self, df, n):
+
+        if self.config['model'] in ['CSCC','RES']:
+            raise Exception("CSCC and RES models are not yet finished.")
+
+        # Number of features is equal to number of rows in csv file
+        i = df.shape[0]
+
+        # Setting the inputs to the appropriate variables
+        OD = df['OD_inch'].values
+        WTm = df['WT_mm'].values
+        Sm = df['grade_MPa'].values
+        df['toughness_J'] = df['toughness_J'].fillna(10)
+        Tm = df['toughness_J'].values
+        Inst = df['install_date']
+
+        UTSm = ultimate_determiner(Sm)
+
+        OPm = df['MAOP_kPa'].values
+
+        MAXPm = df['PMax_kPa'].values
+        MINPm = df['PMin_kPa'].values
+        cycles = df['AESC'].values
+
+        # Operating pressure in kPa
+        MAXStr = (MAXPm * OD * 25.4) / (2000 * WTm)
+        MINStr = (MINPm * OD * 25.4) / (2000 * WTm)
+
+        fids = df['FeatureID'].values
+        fstatus = df['status'].values
+        ftype = df['type'].values
+        surface = df['ILIFSurfaceInd'].values
+        fchainage = df['chainage_m'].values
+        fPDP = df['depth_fraction'].values
+        fL_measured = df['length_mm'].values
+        fW_measured = df['width_mm'].values
+        vendor_cgr = df['vendor_cgr_mmpyr'].values
+        df['vendor_cgr_sd'] = df['vendor_cgr_sd'].fillna(df['vendor_cgr_mmpyr']*0.10)
+        vendor_cgr_sd = df['vendor_cgr_sd'].values
+
+        # gouge depth pct
+        gPDP = 0.
+
+        vendor = df['vendor'].values
+        tool = df['tool'].values
+        Insp = df['ILIRStartDate']
+
+        time_delta = ((self.now - Insp).dt.days.values) / 365.25
+        ILI_age = ((Insp - Inst).dt.days.values) / 365.25
+
+        #Young's modulus in psi
+        E = 30.0e6
+
+        #Crack fracture area in sq. inches
+        fa = 0.124
+        
+        # statistics for the inputs
+        meanOD = 1.0
+        sdOD = 0.0006
+        meanWT = 1.01
+        sdWT = 0.01
+        meanUTS = 1.12
+        sdUTS = 0.035
+        meanE = 1.0
+        sdE = 0.04
+        if self.config['model'] == 'CORR':
+            meanS = 1.09
+            sdS = 0.044
+        else:
+            meanS = 1.1
+            sdS = 0.035
+
+        #Unit conversion to US units
+        WT = WTm/25.4
+        S = (Sm*1000)/6.89476
+        T = Tm*0.7375621
+        OP = OPm/6.894069706666676
+
+        NPS = np.floor(OD)
+        rosensd = np.where(NPS < 18, 0.005, np.where(NPS < 30, 0.003, np.where(NPS < 40, 0.002, 0.0015)))
+
+        tool_stats = {'CORR':{
+                            "Rosen": {
+                                "sdPDP": 0.078*WTm,  # in absolute mm
+                                "sdL": 0.61*25.4  # in mm
+                            },
+                            "RosenF": {
+                                "sdPDP": 0.078*WTm,  # in fraction WT
+                                "sdL": 0.61*25.4  # in inches
+                            }
+                        },
+                    'MD':{
+                            "UTCD": {
+                                "sdPDP": np.where(WTm*fPDP < 4, 0.780, 3.120),  # absolute mm
+                                "sdL": 7.80  # in mm
+                            },
+                            "AFD": {
+                                "sdPDP": 0.195*WTm,  # in absolute mm
+                                "sdL": 15.6  # in mm
+                            },
+                            "EMAT": {
+                                "sdPDP": np.where(WTm < 10, 0.117, 0.156)*WTm, #in absolute mm
+                                "sdL": 7.8  # in mm
+                            }
+                        },
+                    'SCC':{
+                            "Rosen": {
+                                "sdPDP": 0.78,   # in mm (0.78)
+                                "sdL": 7.80      #in mm (7.80)
+                                },
+                            "RosenF": {
+                                "sdPDP":np.where(WTm < 10, 0.117, 0.156)*WTm, #in mm
+                                "sdL":15.61  #in mm
+                                },
+                            "Rosen3": {
+                                "sdPDP":np.where(fPDP*WTm < 4, 0.780, 3.120), #in mm
+                                "sdL":7.80  #in mm
+                                },
+                            "PII": {
+                                "sdPDP": 0.31,  # in mm
+                                "sdL":6.10      #in mm
+                                }
+                            },
+                    'CSCC':{
+                            "RosenF": {
+                                "sdPDP":0.78,   # in mm
+                                "sdL":7.80,      #in mm
+                                "sdW":7.80      #in mm
+                                },
+                            "Rosen": {
+                                "sdPDP":np.where(WTm < 10, 0.117, 0.156)*WTm, #in mm
+                                "sdL":7.80,  #in mm
+                                "sdW":7.80  #in mm
+                                },
+                            "PII": {
+                                "sdPDP": 0.31,  # in mm
+                                "sdL":6.10,      #in mm
+                                "sdW":6.10      #in mm
+                                }
+                            },
+                    'RES':{
+                            "Rosen": {
+                                "sdPDP": rosensd*NPS*25.4,  # in absolute mm
+                                "sdL": 19.5,  # in mm
+                                "sdW": 39.0  # in mm
+                            },
+                            "BJ": {
+                                "sdPDP": 2.5,  # in mm
+                                "sdL": 2.5,  # in mm
+                                "sdW": 2.5  # in mm
+                            },
+                            "TDW": {
+                                "sdPDP": 0.0056*NPS*25.4,  # in absolute mm
+                                "sdL": 7.6,  # in mm
+                                "sdW": 25.4  # in mm
+                            }
+                        }
+        }
+        defectTol = tool_stats[self.config['model']]
+
+        if self.config['model'] == 'CORR':
+
+            tool_D = np.select([vendor =="Rosen",vendor=="RosenF"],
+                                [defectTol["Rosen"]["sdPDP"],defectTol["RosenF"]["sdPDP"]], default=0.078*WTm)
+            tool_L = np.select([vendor =="Rosen",vendor=="RosenF"],
+                                [defectTol["Rosen"]["sdL"],defectTol["RosenF"]["sdL"]], default=0.61*25.4)
+
+        elif self.config['model'] == 'MD':
+
+            tool_D = np.select([tool =="AFD",tool=="EMAT",tool=="UTCD"],
+                            [defectTol["AFD"]["sdPDP"],defectTol["EMAT"]["sdPDP"],defectTol["UTCD"]["sdPDP"]])
+            tool_L = np.select([tool =="AFD",tool=="EMAT",tool=="UTCD"],
+                            [defectTol["AFD"]["sdL"],defectTol["EMAT"]["sdL"],defectTol["UTCD"]["sdL"]])
+
+        elif self.config['model'] == 'SCC':
+
+            tool_D = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII",vendor=='Rosen3'],
+                            [defectTol["Rosen"]["sdPDP"],defectTol["RosenF"]["sdPDP"],defectTol["PII"]["sdPDP"],defectTol["Rosen3"]["sdPDP"]])
+            tool_L = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII",vendor=='Rosen3'],
+                            [defectTol["Rosen"]["sdL"],defectTol["RosenF"]["sdL"],defectTol["PII"]["sdL"],defectTol["Rosen3"]["sdL"]])
+        
+        elif self.config['model'] == 'CSCC':
+
+            tool_D = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII"],
+                            [defectTol["Rosen"]["sdPDP"],defectTol["RosenF"]["sdPDP"],defectTol["PII"]["sdPDP"]])
+            tool_L = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII"],
+                            [defectTol["Rosen"]["sdL"],defectTol["RosenF"]["sdL"],defectTol["PII"]["sdL"]])
+            tool_W = np.select([vendor =="Rosen",vendor=="RosenF",vendor=="PII"],
+                            [defectTol["Rosen"]["sdW"],defectTol["RosenF"]["sdW"],defectTol["PII"]["sdW"]])
+        
+        elif self.config['model'] == 'RES':
+
+            tool_D = np.where(vendor == "BJ", defectTol["BJ"]["sdPDP"],
+                        np.where(vendor == "Rosen", defectTol["Rosen"]["sdPDP"],
+                                defectTol["TDW"]["sdPDP"]))
+            tool_L = np.where(vendor == "BJ", defectTol["BJ"]["sdL"],
+                        np.where(vendor == "Rosen", defectTol["Rosen"]["sdL"], defectTol["TDW"]["sdL"]))
+            tool_W = np.where(vendor == "BJ", defectTol["BJ"]["sdW"],
+                        np.where(vendor == "Rosen", defectTol["Rosen"]["sdW"], defectTol["TDW"]["sdW"]))
+
+        # gouge depth specs in fraction of WT
+        sdg = 0.078*WTm
+
+        np.random.seed()
+        OP = np.tile(OP, (n, 1))
+        T = np.tile(T, (n, 1))
+
+        # distribution of variables for corrosion models in imperial units
+        if self.config['model'] == 'CORR':
+            OD = np.tile(OD, (n, 1))
+            mE_rn = np.random.rand(n,i)
+
+            def model_error(p):
+                return 0.914 + gamma.ppf(p, 2.175, scale=0.225)
+
+            modelError = model_error(mE_rn)
+
+        # distribution of variables that leverage distributed OD in imperial units
+        if self.config['model'] in ['MD','SCC','CSCC','RES']:
+            OD_rn = np.random.rand(n,i)
+            
+            ODd = norm.ppf(OD_rn, loc=OD*meanOD, scale=OD*sdOD)
+
+        # distribution of variables for crack modelsin imperial units
+        if self.config['model'] in ['MD','SCC']:
+            E_rn = np.random.rand(n,i)
+            
+            Ed = norm.ppf(E_rn, loc=E*meanE, scale=E*sdE)
+
+        # distribution of anomaly width for CSCC and RES in imperial units
+        if self.config['model'] in ['CSCC','RES']:
+            fW_rn = np.random.rand(n,i)
+            
+            fW = np.maximum(1, norm.ppf(fW_rn, loc=fW_measured * 1.0, scale=tool_W)) / 25.4
+
+        # distribution of width growth rate for CSCC in imperial units
+        if self.config['model'] in ['CSCC']:
+            WGR_rn = np.random.rand(n,i)
+            
+            fW_GR = 3.126402*np.power( -np.log(1-WGR_rn) ,1/1.874228039) / 25.4
+
+            fW += fW_GR*time_delta
+
+        # distribution of UTS and gouge depth for RES
+        if self.config['model'] in ['RES']:
+            UTS_rn = np.random.rand(n,i)
+            gD_rn = np.random.rand(n,i)
+            
+            UTSd = norm.ppf(UTS_rn, loc=UTSm * meanUTS, scale=UTSm * sdUTS) / 6.89476
+            gD = np.where(gPDP == 0, np.zeros((n,i), dtype=float),np.maximum(0, norm.ppf(gD_rn, loc=gPDP * WTm * 1.0, scale=WTm * sdg))) / 25.4
+
+        #distribution of common variables in imperial units
+        WT_rn = np.random.rand(n,i)
+        SMYS_rn = np.random.rand(n,i)
+        fD_rn = np.random.rand(n,i)
+        fL_rn = np.random.rand(n,i)
+        DGR_rn = np.random.rand(n,i)
+        LGR_rn = np.random.rand(n,i)
+        
+        # distributed pipe properties in imperial
+        WTd = norm.ppf(WT_rn, loc=WT * meanWT, scale=WT * sdWT)
+        SMYSd = norm.ppf(SMYS_rn, loc=S * meanS, scale=S * sdS)
+
+        # feature depth in inches
+        fD = np.maximum(0, norm.ppf(fD_rn, loc=fPDP * WTm * 1.0, scale=tool_D)) / 25.4
+
+        # feature length in inches
+        fL = np.maximum(0, norm.ppf(fL_rn, loc=fL_measured * 1.0, scale=tool_L)) / 25.4
+
+        # weibull Distribution parameters
+        shape = self.weibull_shape
+        scale = self.weibull_scale
+
+        # definition of depth CGR 
+        if 'cgr' in self.config:
+            fD_GR = self.config['cgr'](surface=surface, random=DGR_rn, depth=fD, ILI_age=ILI_age, vendor_cgr_mmpy=vendor_cgr, vendor_cgr_sd=vendor_cgr_sd)
+        else:
+        ## default depth CGR methodology.
+            if self.config['model'] == 'CORR':
+                fD_GR = cgr_weibull(DGR_rn, shape, scale) / 25.4
+            elif self.config['model'] == 'MD':
+                fD_GR = 2*fD/ILI_age
+            elif self.config['model'] == 'SCC':
+                fD_GR = cgr_weibull(DGR_rn, shape, scale) / 25.4
+            elif self.config['model'] == 'CSCC':
+                fD_GR = 0.26*np.power( -np.log(1-DGR_rn) ,1/2.0) / 25.4
+            else:
+                fD_GR = 0.00
+
+        ## definition of length CGR
+        if 'lcgr' in self.config:
+            fL_GR = self.config['lcgr'](surface=None, random=LGR_rn, length=fL, ILI_age=ILI_age, vendor_cgr_mmpy=vendor_cgr, vendor_cgr_sd=vendor_cgr_sd)
+        else:
+        ## default length CGR methodology.
+            if self.config['model'] in ['CORR','SCC','CSCC','RES']:
+                fL_GR = 0.00
+            elif self.config['model'] == 'MD':
+                fL_GR = 2.0*fL/ILI_age
+            else: 
+                fL_GR = 0.00
+
+        fD += fD_GR*time_delta
+        fL += fL_GR*time_delta
+
+        # model-specific limit states calculation
+        if self.config['model'] == 'CORR':
+            failStress = modified_b31g(OD, WTd, SMYSd, fL, fD, units="US") * modelError
+
+            # Failure pressure in psi
+            failPress = 2 * failStress * WTd / OD
+
+            fsNaNs = np.extract(np.isnan(failStress),failStress)
+            fsNaNs_count = fsNaNs.size
+
+            ruptures, rupture_count = ls_rupture(OP, failPress, thresh=self.rupt_thresh, bulk=True)
+            leaks, leak_count = ls_leak(WTd, fD, thresh=self.leak_thresh, bulk=True)
+            fails, fail_count = ls_total(ruptures, leaks, bulk=True)
+
+
+        elif self.config['model'] in ['MD','SCC']:
+            failStress = modified_lnsec(ODd, WTd, SMYSd, T, Ed, fL, fD, units="US")
+
+            #Failure pressure in psi
+            failPress = 2 * failStress * WTd / ODd
+
+            fsNaNs = np.extract(np.isnan(failStress),failStress)
+            fsNaNs_count = fsNaNs.size
+
+            ruptures, rupture_count = ls_rupture(OP, failPress, thresh=self.rupt_thresh, bulk=True)
+            leaks, leak_count = ls_leak(WTd, fD, thresh=self.leak_thresh, bulk=True)
+            fails, fail_count = ls_total(ruptures, leaks, bulk=True)
+
+        elif self.config['model'] == 'CSCC':
+            depth_thresh = 0.6
+            leaks = fD >= depth_thresh*WTd
+            leaks = leaks.astype(int)
+            
+            circ_thresh = 0.4
+            circ_thresh_depth = 0.4
+            ruptures = (fW >= circ_thresh*np.pi*ODd) & (fD >= circ_thresh_depth*WTd)
+            ruptures = ruptures.astype(int)
+
+            fails = np.maximum(leaks,ruptures)
+            fails = fails.astype(int)
+
+            fail_count = np.sum(fails, axis=0)
+            leak_count = np.sum(leaks, axis=0)
+            rupture_count = np.sum(ruptures, axis=0)
+
+        elif self.config['model'] == 'RES':
+            NF = nf_EPRG(ODd, WTd, UTSd, fL, fW, fD, gD, MAXStr, MINStr)
+
+            n_cycles = time_delta * cycles
+
+            leak_count = np.zeros((i,))
+            rupture_count = np.zeros((i,))
+            fails, fail_count = ls_dent_fail(NF, n_cycles, bulk=True)
+
+        return_dict = {"FeatureID": fids,
+                        "PDP_frac": fPDP,
+                        "flength": fL_measured,
+                        "fwidth": fW_measured,
+                        "iterations": np.size(fails, axis=0),
+                        "fail_count": fail_count,
+                        "rupture_count": rupture_count,
+                        "leak_count": leak_count,
+                        "nan": np.zeros((i,)),
+                        }
+
+        return_df = pd.DataFrame(return_dict)
+
+        return return_df, None
+
 
 if __name__ == '__main__':
 
     pd.set_option('display.max_columns',500)
 
     def cgr(**kwargs):
-        # alpha = kwargs['vcgr']/kwargs['vcgr_sd']
+        # alpha = kwargs['vendor_cgr_mmpyr']/kwargs['vendor_cgr_sd']
         # return np.where(alpha > 3.0,
-        #                 np.maximum(0, norm.ppf(kwargs['random'], loc=kwargs['vcgr'], scale=kwargs['vcgr_sd']))/25.4,
+        #                 np.maximum(0, norm.ppf(kwargs['random'], loc=kwargs['vendor_cgr_mmpyr'], scale=kwargs['vendor_cgr_sd']))/25.4,
         #                 np.where(kwargs['surface'] == 'E', cgr_weibull(kwargs['random'], 1.6073, 0.1) / 25.4,
         #                             cgr_weibull(kwargs['random'], 3.2962, 0.1) / 25.4))
         # return np.where(kwargs['surface'] == 'E',
@@ -1581,13 +1955,24 @@ if __name__ == '__main__':
         # return 12.5/1000.
         return kwargs['depth']/kwargs['ILI_age']
 
-    config = dict(iterations=1_000_0,cgr=cgr)
-    corr = MonteCarlo('CORR', config=config)
+    config = dict(iterations=1_00_000,
+    #cgr=cgr
+    )
+    corr = MonteCarlo('CSCC', config=config)
     
     corr.get_data('sample_of_inputs.csv')
     corr.df = corr.df.iloc[0:10]
     corr.run()
-    print(corr.result)
+
+
+    mcrun = MonteCarlo('CSCC', config=config)
+    mcrun.get_data('sample_of_inputs.csv')
+    mcrun.df = mcrun.df.iloc[0:10]
+    mcrun.special_run()
+
+    comparison = pd.concat([mcrun.result[['POE','POE_l','POE_r']],corr.result[['POE','POE_l','POE_r']]],axis=1)
+    tolerance = np.isclose(comparison.iloc[:,0],comparison.iloc[:,3],atol=1e-2)
+    print(comparison)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
     # corr = StatisticalPOE(run_date='2019-12-31')
