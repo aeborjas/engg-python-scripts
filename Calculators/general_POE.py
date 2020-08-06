@@ -1955,17 +1955,17 @@ if __name__ == '__main__':
         # return 12.5/1000.
         return kwargs['depth']/kwargs['ILI_age']
 
-    config = dict(iterations=1_00_000,
+    config = dict(iterations=1_000_000,
     #cgr=cgr
     )
-    corr = MonteCarlo('CSCC', config=config)
+    corr = MonteCarlo('CORR', config=config)
     
     corr.get_data('sample_of_inputs.csv')
     corr.df = corr.df.iloc[0:10]
     corr.run()
 
 
-    mcrun = MonteCarlo('CSCC', config=config)
+    mcrun = MonteCarlo('CORR', config=config)
     mcrun.get_data('sample_of_inputs.csv')
     mcrun.df = mcrun.df.iloc[0:10]
     mcrun.special_run()
