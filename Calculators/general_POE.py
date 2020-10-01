@@ -891,7 +891,7 @@ class MonteCarlo:
         fids = df['FeatureID'].values
         surface = df['ILIFSurfaceInd'].values
         vendor_cgr = df['vendor_cgr_mmpyr'].values
-        df['vendor_cgr_sd'] = df['vendor_cgr_sd'].fillna(df['vendor_cgr_mmpyr']*0.10)
+        # df['vendor_cgr_sd'] = df['vendor_cgr_sd'].fillna(df['vendor_cgr_mmpyr']*0.10)
         vendor_cgr_sd = df['vendor_cgr_sd'].values
 
         vendor = df['vendor'].values
@@ -959,9 +959,23 @@ class MonteCarlo:
             fD_GR = self.config['cgr'](surface=surface, random=fGR_n_7, depth=fD_run, ILI_age=ILI_age, vcgr=vendor_cgr, vcgr_sd=vendor_cgr_sd)
         else:
         ## default CGR methodology.
-            fD_GR = cgr_weibull(fGR_n_7, shape, scale) / 25.4
+            alpha = np.where(np.isnan(vendor_cgr),
+                            np.nan,
+                            np.where(np.isnan(vendor_cgr_sd),
+                                    vendor_cgr/(WTm*tool_D/time_delta),
+                                    vendor_cgr/vendor_cgr_sd))
 
-        fD = fD_run + fD_GR * time_delta
+            fD_GR_default = np.where(surface=="E",
+                                    cgr_weibull(fGR_n_7,1.6073,0.1)/25.4,
+                                    cgr_weibull(fGR_n_7,3.29625,0.1)/25.4)
+
+            fD_GR = np.where(np.logical_or(np.isnan(vendor_cgr),alpha<3.00),
+                            fD_GR_default,
+                            np.where(np.isnan(vendor_cgr_sd),
+                                    np.maximum(0, norm.ppf(fGR_n_7, loc=vendor_cgr, scale=vendor_cgr/(WTm*tool_D/time_delta))) / 25.4,
+                                    np.maximum(0, norm.ppf(fGR_n_7, loc=vendor_cgr, scale=vendor_cgr_sd)) / 25.4))
+
+        fD = fD_run + fD_GR * time_delta    
 
         modelError = model_error(mE_n_1)
 
@@ -1463,8 +1477,9 @@ class MonteCarlo:
         tool = df['tool'].values
         Insp = df['ILIRStartDate']
 
-        time_delta = (self.now - Inst).dt.days.values / 365.25
-        
+        # time_delta = (self.now - Inst).dt.days.values / 365.25
+        time_delta = (self.now - Insp).dt.days.values / 365.25
+
         # Sensitivity Factor
         sf = 1
 
@@ -1532,38 +1547,57 @@ class MonteCarlo:
 
         NF = nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr)
 
+        ## TEST For TMC 20200831
+        # ODt = ODm/WTd
+        #kMAX 1
+        # kMAX = 7.5*(1-np.exp(-0.065*ODt))
+        #kMAX 2
+        # kMAX = 9.4*(1-np.exp(-0.045*ODt))
+        #kMAX from EPRG
+        # dRL = (np.power(dL_run, 2.0) + 4.0 * np.power(dD_run, 2.0)) / (8.0 * dD_run)
+        # dRW = (np.power(dW_run, 2.0) + 4.0 * np.power(dD_run, 2.0)) / (8.0 * dD_run)
+        # dR = np.minimum(dRW, dRL)
+        # Crd = np.where(dR < 5.0*WTd, 1.0, 2.0)
+        # dSEF = 1 + Crd*np.power(np.power(dD_run,1.5)*WTd/ODd,0.5)
+        # gSEF = 1 + 9.0*(gD/WTd)
+        # kMAX = gSEF*dSEF
+        # NF = np.power(10.0,12.6007-3.0*np.log10(kMAX*(MAXStr-MINStr)))
+
         n_cycles = time_delta * cycles
 
         fails, fail_count = ls_dent_fail(NF, n_cycles, bulk=True)
 
         return_dict = {"FeatureID":dids,
                     "fail_count": fail_count,
+                    "leak_count": fail_count,
+                    "rupture_count": fail_count,
                     "iterations": np.size(fails, axis=0),
                     "NPS_Frac": dPDP,
                     "dlength": dL_measured,
-                    "dwidth": dW_measured}
+                    "dwidth": dW_measured,
+                    "time_delta":time_delta,}
 
         return_df = pd.DataFrame(return_dict)
 
-        ##UPDATE HERE-------------------------------------------------------------------------------
-        feat = 0
-        cols = [ODd,WTd,UTSd,gD,dW_run,dL_run,dD_run,NF,fails]
-        cols_lab = ['ODd','WTd','UTSd','gD','dW_run','dL_run','dD_run','NF','fails']
+        # ##UPDATE HERE-------------------------------------------------------------------------------
+        # feat = 0
+        # cols = [ODd,WTd,UTSd,gD,dW_run,dL_run,dD_run,NF,fails]
+        # cols_lab = ['ODd','WTd','UTSd','gD','dW_run','dL_run','dD_run','NF','fails']
 
-        qc_dict = dict()
-        qc_dict = {x:np.take(y,feat,axis=1) for x,y in zip(cols_lab,cols)}
-        qc_df = pd.DataFrame(qc_dict)
-        qc_df['n_cycles']=n_cycles[0]
-        qc_df['Inst']=Inst[0]
-        qc_df['vendor']=vendor[0]
-        qc_df['tool']=tool[0]
-        qc_df['tool_D']=tool_D[0]
-        qc_df['tool_L']=tool_L[0]
-        qc_df['tool_W']=tool_W[0]
+        # qc_dict = dict()
+        # qc_dict = {x:np.take(y,feat,axis=1) for x,y in zip(cols_lab,cols)}
+        # qc_df = pd.DataFrame(qc_dict)
+        # qc_df['n_cycles']=n_cycles[0]
+        # qc_df['Inst']=Inst[0]
+        # qc_df['vendor']=vendor[0]
+        # qc_df['tool']=tool[0]
+        # qc_df['tool_D']=tool_D[0]
+        # qc_df['tool_L']=tool_L[0]
+        # qc_df['tool_W']=tool_W[0]
         ##-----------------------------------------------------------------------------------------
 
         
-        return return_df, qc_df
+        return return_df, None
 
     def mcpoe(self, df, n):
 
@@ -1914,6 +1948,7 @@ class MonteCarlo:
             leak_count = np.sum(leaks, axis=0)
             rupture_count = np.sum(ruptures, axis=0)
 
+        # NEED TO FIX THIS SECTION, AS IT's USING VOLUMETRIC DEPTH AND NOT GEOMETRIC DEPTH
         elif self.config['model'] == 'RES':
             NF = nf_EPRG(ODd, WTd, UTSd, fL, fW, fD, gD, MAXStr, MINStr)
 
@@ -1943,7 +1978,7 @@ if __name__ == '__main__':
 
     pd.set_option('display.max_columns',500)
 
-    def cgr(**kwargs):
+    # def cgr(**kwargs):
         # alpha = kwargs['vendor_cgr_mmpyr']/kwargs['vendor_cgr_sd']
         # return np.where(alpha > 3.0,
         #                 np.maximum(0, norm.ppf(kwargs['random'], loc=kwargs['vendor_cgr_mmpyr'], scale=kwargs['vendor_cgr_sd']))/25.4,
@@ -1953,7 +1988,7 @@ if __name__ == '__main__':
         #             cgr_weibull(kwargs['random'], 1.6073, 0.1) / 25.4,
         #             cgr_weibull(kwargs['random'], 3.2962, 0.1) / 25.4)
         # return 12.5/1000.
-        return kwargs['depth']/kwargs['ILI_age']
+        # return kwargs['depth']/kwargs['ILI_age']
 
     config = dict(iterations=1_000_000,
     #cgr=cgr
@@ -1961,18 +1996,22 @@ if __name__ == '__main__':
     corr = MonteCarlo('CORR', config=config)
     
     corr.get_data('sample_of_inputs.csv')
-    corr.df = corr.df.iloc[0:10]
-    corr.run()
+    # corr.df = corr.df.iloc[0:10]
+    corr.run(split_iterations=True,iterations_split=10)
 
 
-    mcrun = MonteCarlo('CORR', config=config)
-    mcrun.get_data('sample_of_inputs.csv')
-    mcrun.df = mcrun.df.iloc[0:10]
-    mcrun.special_run()
+    # mcrun = MonteCarlo('CORR', config=config)
+    # mcrun.get_data('sample_of_inputs.csv')
+    # mcrun.df = mcrun.df.iloc[0:10]
+    # mcrun.special_run()
 
-    comparison = pd.concat([mcrun.result[['POE','POE_l','POE_r']],corr.result[['POE','POE_l','POE_r']]],axis=1)
-    tolerance = np.isclose(comparison.iloc[:,0],comparison.iloc[:,3],atol=1e-2)
-    print(comparison)
+    # res = MonteCarlo('RD', config=config)
+    # res.get_data('sample_of_inputs.csv')
+    # res.run()
+
+    # comparison = pd.concat([mcrun.result[['POE','POE_l','POE_r']],corr.result[['POE','POE_l','POE_r']]],axis=1)
+    # tolerance = np.isclose(comparison.iloc[:,0],comparison.iloc[:,3],atol=1e-2)
+    # print(comparison)
     # for i,x in enumerate(scc.df.columns):
     #     vars()[x.strip()] = scc.df.to_numpy()[:,i]
     # corr = StatisticalPOE(run_date='2019-12-31')
