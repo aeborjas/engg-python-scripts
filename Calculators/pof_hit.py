@@ -1,6 +1,7 @@
 from scipy.stats import norm, gamma
 import time, datetime
-import numpy as np, pandas as pd, matplotlib.pyplot as plt
+import numpy as np, pandas as pd, matplotlib.pyplot as plt, matplotlib.cm as cm, matplotlib as mpl
+from mpl_toolkits import mplot3d
 from os.path import abspath, dirname, join
 
 def random_prob_gen(x, iterations=1, features=1):
@@ -60,8 +61,8 @@ def NG18QFactor(od, wt, flow, T, dD, gD, gL, gA=1.00, units="SI"):
 
 def force_for_puncture(od, wt, uts, tooth_perimeter, model_error=0.):
     #returns force required to puncture pipe in kN
-    failForce = 0.000464*np.power(wt*uts,1.087)*tooth_perimeter
-    # failForce = (1.17-0.0029*(od/wt))*tooth_perimeter*wt*uts+model_error
+##    failForce = 0.000464*np.power(wt*uts,1.087)*tooth_perimeter
+    failForce = (1/1000.0)*(1.17-0.0029*(od/wt))*tooth_perimeter*wt*uts
     return failForce
 
 def ls_gouge_dent_fail(value, limit, bulk=False):
@@ -196,7 +197,7 @@ def pof_hit(df,n):
 
     #Test of Failure due to Puncture
     op_puncture_control = 0.81
-    failForce = force_for_puncture(ODd, WTd, UTSd, exLWd)
+    failForce = np.maximum(force_for_puncture(ODd, WTd, UTSd, exLWd),0.00)
     fails_p, fail_count_p = ls_puncture_fail(exFd*(op_puncture_control/op_gouge_control),failForce, bulk=True)
 
     fails, fail_count = ls_total(fails_gd, fails_p, bulk=True)
@@ -246,16 +247,108 @@ def pof_hit(df,n):
     return return_df, qc_df
 
 
-scenarios = 100
 
-df = dict(OD_inch=np.full(scenarios,36.0*25.4),
-        WT_mm=np.linspace(3.20,18.9,scenarios),
+od = np.array([4., 6.625, 8.625, 10.75, 12.75, 16., 20., 24., 30., 32., 34., 36.])
+wt = np.linspace(3.20,18.9,num = od.size)
+t = np.linspace(10.0,25.0,num = od.size)
+
+od, wt, t = np.meshgrid(od, wt, t)
+
+scenarios = od.size
+
+df = dict(OD_inch=od.reshape(-1),
+        WT_mm=wt.reshape(-1),
         grade_MPa=np.full(scenarios,359.0),
         MAOP_kPa=np.full(scenarios,7000.0),
-        T_J=np.full(scenarios,20.0),
-        class_loc=np.full(scenarios,"class 4")
+        T_J=t.reshape(-1),
+        class_loc=np.full(scenarios,"class 1")
         )
 df = pd.DataFrame(df)
+df.MAOP_kPa = 0.20*2.0*df.grade_MPa*1000*df.WT_mm/(df.OD_inch*25.4)
 
-result, qc = pof_hit(df, 100_000)
+result, qc = pof_hit(df,10_000)
 print(result)
+
+def generate_plots(df, col1, col2):
+    
+    pof = df.pivot_table(index=col1,columns=col2,values="fail_pof").values
+    pofgd = df.pivot_table(index=col1,columns=col2,values="fail_gD_pof").values
+    pofp = df.pivot_table(index=col1,columns=col2,values="fail_p_pof").values
+
+    par1 = np.sort(df.loc[:,col1].unique())
+    par2 = np.sort(df.loc[:,col2].unique())
+
+    par1, par2 = np.meshgrid(par1, par2)
+
+    fig, ax = plt.subplots(3,1, sharex=True)
+    levels = np.geomspace(0.001,1.0, 10)
+    cpf = ax[0].contourf(par1, par2, pof, levels=levels, cmap=cm.Reds)
+    line_colors = ['black' for l in cpf.levels]
+    cp = ax[0].contour(par1, par2, pof, levels=levels, colors=line_colors)
+    ax[0].clabel(cp, fontsize=10, colors=line_colors)
+    ax[0].set_title("Total POF")
+
+    cpf = ax[1].contourf(par1, par2, pofgd, levels=levels, cmap=cm.Reds)
+    cp = ax[1].contour(par1, par2, pofgd, levels=levels, colors=line_colors)
+    ax[1].clabel(cp, fontsize=10, colors=line_colors)
+    ax[1].set_title("Gouge-in-Dent POF")
+
+    cpf = ax[2].contourf(par1, par2, pofp, levels=levels, cmap=cm.Reds)
+    cp = ax[2].contour(par1, par2, pofp, levels=levels, colors=line_colors)
+    ax[2].clabel(cp, fontsize=10, colors=line_colors)
+    ax[2].set_title("Puncture Resistance POF")
+
+    ax[2].set_xlabel(col1)
+    ax[1].set_ylabel(col2)
+
+    fig.suptitle(f"{col1} versus {col2}")
+    fig.subplots_adjust(right=0.8)
+    cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
+    fig.colorbar(cpf, cax=cbar_ax)
+
+generate_plots(result, "OD", "WT")
+generate_plots(result, "OD", "T")
+generate_plots(result, "WT", "T")
+
+def generate_3dplot(df, col1, col2, col3):
+    fig = plt.figure()
+    ax = fig.gca(projection='3d')
+    
+    pof_12 = df.pivot_table(index=col1,columns=col2,values="fail_pof").values
+    pof_23 = df.pivot_table(index=col2,columns=col3,values="fail_pof").values
+    pof_13 = df.pivot_table(index=col1,columns=col3,values="fail_pof").values
+
+    par1 = np.sort(df.loc[:,col1].unique())
+    par2 = np.sort(df.loc[:,col2].unique())
+    par3 = np.sort(df.loc[:,col3].unique())
+
+##    par1, par2, par3 = np.meshgrid(par1, par2, par3)
+
+##    ax.plot_surface(od, wt, pof, cmap=cm.Reds)
+    cset = ax.plot_surface(pof_12, pof_23, pof_13, cmap=cm.Reds)
+
+    cset = ax.contourf(pof_12, pof_23, pof_12, zdir='z', offset=0., cmap=cm.Reds)
+    cset = ax.contourf(pof_12, pof_23, pof_13, zdir='x', offset=0., cmap=cm.Reds)
+    cset = ax.contourf(pof_12, pof_23, pof_13, zdir='y', offset=0., cmap=cm.Reds)
+
+    ax.set_xlabel(col1)
+    ax.set_xlim(0,)
+    ax.set_ylabel(col2)
+    ax.set_ylim(0,)
+    ax.set_zlabel(col3)
+    ax.set_zlim(0,)
+    return (par1, par2, par3), (pof_12, pof_23, pof_13)
+
+##x = generate_3dplot(result,"OD","WT","T")
+
+##fig, axs = plt.subplots(1,2)
+##result.set_index("WT")[["fail_gD_pof","fail_p_pof"]].plot(ax=axs[0])
+##result.set_index("WT")[["fail_pof"]].plot(ax=axs[1])
+##
+##for ax in axs:
+##    ax.set_yscale("log")
+##    ax.grid()
+##    ax.set_xlabel("Sensitivity Parameter")
+##    ax.set_ylabel("POF")
+
+plt.show()
