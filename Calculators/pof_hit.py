@@ -22,10 +22,12 @@ def dist_weibull(p,shp=1.2,scl=3.2):
     return  scl*np.power( -np.log(1.0-p) ,1.0/shp)
 
 def excavator_force_class1_2(rand,force_reduc_1,force_reduc_2):
+    # excavator force (kN)
     F = 3778.585582*np.power(rand,6) + 1316.518325*np.power(rand,5) - 13422.057887*np.power(rand,4) + 12439.187305*np.power(rand,3) - 3902.560258*np.power(rand,2) + 517.745042*rand + 15.848802
     return force_reduc_1*force_reduc_2*F
 
 def excavator_force_class3_4(rand,force_reduc_1,force_reduc_2):
+    # excavator force (kN)
     F = 22059.01771688*np.power(rand,6) - 61203.11722147*np.power(rand,5) + 62797.73990864*np.power(rand,4) - 28797.41597699*np.power(rand,3) + 5785.487471463*np.power(rand,2) - 296.1418563905*rand + 26.36112543804
     return force_reduc_1*force_reduc_2*F
 
@@ -48,11 +50,11 @@ def NG18QFactor(od, wt, flow, T, dD, gD, gL, gA=1.00, units="SI"):
         gD_c = gD
         gL_c = gL
 
-    c2 = 300.0
-    c3 = 90.0
+    c2 = 300.0 #this is in ft-lbs/inch. Apparently, the SI counterpart is 16. J/mm
+    c3 = 90.0   #this is in (ft-lbs/inch)^0.6. Apparently, the SI counterpart is 4.8 (J/mm)^0.6
 
     #Maxey Q Parameter (ft-lbs/in)
-    Q = np.maximum(T*( (od_c*0.5*wt_c)/( dD_c*gD_c*(gL_c*0.5)*gA ) ), c2)
+    Q = np.maximum(T_c*( (od_c*0.5*wt_c)/( dD_c*gD_c*(gL_c*0.5)*gA ) ), c2)
 
     # stress in ksi
     failStress = flow_c*(np.power(Q-c2,0.6)/c3)
@@ -108,24 +110,24 @@ def pof_hit(df,n):
     T = df['T_J'].values   #J
     class_loc = df['class_loc'].values
 
-    sdOD = 0.0006
-    sdWT = 0.01
-    sdS = 0.035
-    sdT = 0.0001*1.3558   #T
+    sdOD = 0.0006   #COV fraction
+    sdWT = 0.01     #COV fraction
+    sdS = 0.035     #COV fraction
+    sdT = 0.0001*1.3558   #T absolute, in J
 
+    Suts = np.round(S/6.89476)
 
-
-    conditions = [S<=25,
-                 S<=30,
-                 S<=35,
-                 S<=42,
-                 S<=46,
-                 S<=52,
-                 S<=56,
-                 S<=60,
-                 S<=65,
-                 S<=70,
-                 S>70]
+    conditions = [Suts<=25,
+                 Suts<=30,
+                 Suts<=35,
+                 Suts<=42,
+                 Suts<=46,
+                 Suts<=52,
+                 Suts<=56,
+                 Suts<=60,
+                 Suts<=65,
+                 Suts<=70,
+                 Suts>80]
 
     UTS_list = np.array([59.,62.5,72.5,72.5,76.,78.6,82.5,84.,87.,92.7,98.5])
     sdUTS_list = np.array([2.065,2.1875,2.5375,2.5375,2.66,2.751,2.8875,2.94,3.045,3.2445,3.4475])
@@ -247,26 +249,35 @@ def pof_hit(df,n):
     return return_df, qc_df
 
 
+##od = np.array([4., 6.625, 8.625, 10.75, 12.75, 16., 20., 24., 30., 32., 34., 36.])
+##wt = np.linspace(3.20,18.9,num = od.size)
+##t = np.linspace(10.0,25.0,num = od.size)
+####s = np.array([25.,30.,35.,42.,46.,52.,56.,60.,65.,70.,80., 90.])*6.89476
+##
+##od, wt, t = np.meshgrid(od, wt, t)
+##
+##scenarios = od.size
+##
+##df = dict(OD_inch=od.reshape(-1),
+##        WT_mm=wt.reshape(-1),
+##        grade_MPa=np.full(scenarios,359.0),
+##        MAOP_kPa=np.full(scenarios,7000.0),
+##        T_J=t.reshape(-1),
+##        class_loc=np.full(scenarios,"class 1")
+##        )
 
-od = np.array([4., 6.625, 8.625, 10.75, 12.75, 16., 20., 24., 30., 32., 34., 36.])
-wt = np.linspace(3.20,18.9,num = od.size)
-t = np.linspace(10.0,25.0,num = od.size)
-
-od, wt, t = np.meshgrid(od, wt, t)
-
-scenarios = od.size
-
-df = dict(OD_inch=od.reshape(-1),
-        WT_mm=wt.reshape(-1),
-        grade_MPa=np.full(scenarios,359.0),
-        MAOP_kPa=np.full(scenarios,7000.0),
-        T_J=t.reshape(-1),
-        class_loc=np.full(scenarios,"class 1")
+df = dict(OD_inch=[24.],
+        WT_mm=[6.35],
+        grade_MPa=[359.0],
+        MAOP_kPa=[5382.418],
+        T_J=[21.7],
+        class_loc=['class 2']
         )
-df = pd.DataFrame(df)
-df.MAOP_kPa = 0.20*2.0*df.grade_MPa*1000*df.WT_mm/(df.OD_inch*25.4)
 
-result, qc = pof_hit(df,10_000)
+df = pd.DataFrame(df)
+##df.MAOP_kPa = 0.80*2.0*df.grade_MPa*1000*df.WT_mm/(df.OD_inch*25.4)
+
+result, qc = pof_hit(df,10000)
 print(result)
 
 def generate_plots(df, col1, col2):
@@ -306,9 +317,9 @@ def generate_plots(df, col1, col2):
     cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
     fig.colorbar(cpf, cax=cbar_ax)
 
-generate_plots(result, "OD", "WT")
-generate_plots(result, "OD", "T")
-generate_plots(result, "WT", "T")
+##generate_plots(result, "OD", "WT")
+##generate_plots(result, "OD", "T")
+##generate_plots(result, "WT", "T")
 
 def generate_3dplot(df, col1, col2, col3):
     fig = plt.figure()
