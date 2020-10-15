@@ -1,5 +1,5 @@
 from scipy.stats import norm, gamma
-import time, datetime
+import time, datetime, re
 import numpy as np, pandas as pd
 from os.path import abspath, dirname, join
 
@@ -186,7 +186,10 @@ def nf_EPRG(od, wt, uts, dL, dW, dD, gD, MAX, MIN, sf=1.0, units="SI"):
     dSEF = 1 + Crd*np.power(np.power(dD,1.5)*wt/od,0.5)
     gSEF = 1 + 9.0*(gD/wt)
 
-    sigma = (MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
+    # sigma = (MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
+    # sigma = (1/2)*(MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
+    sigma_a = (MAX-MIN)/2
+    sigma = (-1 + np.sqrt(1+4*np.power(sigma_a/uts,2) )) / (2*sigma_a/np.power(uts,2))
 
     NF = (5622.0/sf)*np.power(uts/(sigma*gSEF*dSEF),5.26)
 
@@ -1457,7 +1460,7 @@ class MonteCarlo:
         ###SOMETHING IS WRONG HERE###--------------------------------------
         UTSm = ultimate_determiner(Sm)
 
-        # Operating pressure in kPa
+        # Operating Stress in MPa
         MAXStr = (MAXPm * ODm) / (2000 * WTm)
         MINStr = (MINPm * ODm) / (2000 * WTm)
 
@@ -1467,10 +1470,13 @@ class MonteCarlo:
         dchainage = df['chainage_m'].values
         dstatus = df['status'].values
         dtype = df['type'].values
+        dtype_gouge = df['type'].str.contains(r'.*dent.*gouge.*',case=False).values
         dids = df['FeatureID'].values
 
         # gouge depth pct
-        gPDP = 0
+        gPDP = np.where(dtype_gouge,
+                        0.10,
+                        0.00)
 
         # Inline inspection range properties
         vendor = df['vendor'].values
@@ -1481,7 +1487,7 @@ class MonteCarlo:
         time_delta = (self.now - Insp).dt.days.values / 365.25
 
         # Sensitivity Factor
-        sf = 1
+        sf = 10
 
         meanOD = 1.0
         sdOD = 0.0006
@@ -1545,7 +1551,7 @@ class MonteCarlo:
         # dent depth in mm
         dD_run = np.maximum(0.01, norm.ppf(dD_n_7, loc=dPDP * OD * 25.4 * 1.0, scale=tool_D))
 
-        NF = nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr)
+        NF = nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr, sf=sf)
 
         ## TEST For TMC 20200831
         # ODt = ODm/WTd
@@ -1595,9 +1601,22 @@ class MonteCarlo:
         # qc_df['tool_L']=tool_L[0]
         # qc_df['tool_W']=tool_W[0]
         ##-----------------------------------------------------------------------------------------
+        if i==1:
+            qc_dict = {'ODd': ODd.reshape(-1),
+                        'WTd': WTd.reshape(-1),
+                        'UTS': UTSd.reshape(-1),
+                        'gD': gD.reshape(-1),
+                        'dW_run': dW_run.reshape(-1),
+                        'dL_run': dL_run.reshape(-1),
+                        'dD_run': dD_run.reshape(-1),
+                        'NF':NF.reshape(-1),
+                        "fail_count": fails.reshape(-1)}
 
+            qc_df = pd.DataFrame(qc_dict)
+        else:
+            qc_df = None
         
-        return return_df, None
+        return return_df, qc_df
 
     def mcpoe(self, df, n):
 
@@ -1977,7 +1996,6 @@ class MonteCarlo:
 if __name__ == '__main__':
 
     pd.set_option('display.max_columns',500)
-
     # def cgr(**kwargs):
         # alpha = kwargs['vendor_cgr_mmpyr']/kwargs['vendor_cgr_sd']
         # return np.where(alpha > 3.0,
@@ -1991,13 +2009,14 @@ if __name__ == '__main__':
         # return kwargs['depth']/kwargs['ILI_age']
 
     config = dict(iterations=1_000_000,
+                run_date='2020-03-01',
     #cgr=cgr
     )
-    corr = MonteCarlo('CORR', config=config)
+    # corr = MonteCarlo('CORR', config=config)
     
-    corr.get_data('sample_of_inputs.csv')
+    # corr.get_data('sample_of_inputs.csv')
     # corr.df = corr.df.iloc[0:10]
-    corr.run(split_iterations=True,iterations_split=10)
+    # corr.run(split_iterations=True,iterations_split=10)
 
 
     # mcrun = MonteCarlo('CORR', config=config)
@@ -2005,9 +2024,9 @@ if __name__ == '__main__':
     # mcrun.df = mcrun.df.iloc[0:10]
     # mcrun.special_run()
 
-    # res = MonteCarlo('RD', config=config)
-    # res.get_data('sample_of_inputs.csv')
-    # res.run()
+    res = MonteCarlo('RD', config=config)
+    res.get_data('sample_of_inputs.csv')
+    res.run()
 
     # comparison = pd.concat([mcrun.result[['POE','POE_l','POE_r']],corr.result[['POE','POE_l','POE_r']]],axis=1)
     # tolerance = np.isclose(comparison.iloc[:,0],comparison.iloc[:,3],atol=1e-2)
