@@ -191,7 +191,7 @@ def nf_EPRG(od, wt, uts, dL, dW, dD, gD, MAX, MIN, sf=1.0, units="SI"):
     sigma_a = (MAX-MIN)/2
     sigma = (-1 + np.sqrt(1+4*np.power(sigma_a/uts,2) )) / (2*sigma_a/np.power(uts,2))
 
-    NF = (5622.0/sf)*np.power(uts/(sigma*gSEF*dSEF),5.26)
+    NF = (5622.0/sf)*np.power(uts/(2.0*sigma*gSEF*dSEF),5.26)
 
     return NF
 
@@ -1487,7 +1487,7 @@ class MonteCarlo:
         time_delta = (self.now - Insp).dt.days.values / 365.25
 
         # Sensitivity Factor
-        sf = 10
+        sf = 1
 
         meanOD = 1.0
         sdOD = 0.0006
