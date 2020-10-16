@@ -147,7 +147,7 @@ def modified_lnsec(od, wt, s, t, e, cL, cD, units="SI"):
 
     return failStress
 
-def nf_EPRG(od, wt, uts, dL, dW, dD, gD, MAX, MIN, sf=1.0, units="SI"):
+def nf_EPRG(od, wt, uts, dL, dW, dD, gD, MAX, MIN, sf=1.0, model='EPRG-2000', units="SI"):
     """
     calculates the number of cycles until failure given equivalent stress cycles
     :param od:      Pipe diameter in mm (SI), or in inches (US)
@@ -177,21 +177,68 @@ def nf_EPRG(od, wt, uts, dL, dW, dD, gD, MAX, MIN, sf=1.0, units="SI"):
         MAX = MAX * 6.89476
         MIN = MIN * 6.89476
 
-    dRL = (np.power(dL, 2.0) + 4.0 * np.power(dD, 2.0)) / (8.0 * dD)
-    dRW = (np.power(dW, 2.0) + 4.0 * np.power(dD, 2.0)) / (8.0 * dD)
-    dR = np.minimum(dRW, dRL)
+    if model == 'EPRG-2000':
+    # EPRG-2000 logic
+        dRL = (np.power(dL, 2.0) + 4.0 * np.power(dD, 2.0)) / (8.0 * dD)
+        dRW = (np.power(dW, 2.0) + 4.0 * np.power(dD, 2.0)) / (8.0 * dD)
+        dR = np.minimum(dRW, dRL)
 
-    Crd = np.where(dR < 5.0*wt, 1.0, 2.0)
+        Crd = np.where(dR < 5.0*wt, 1.0, 2.0)
 
-    dSEF = 1 + Crd*np.power(np.power(dD,1.5)*wt/od,0.5)
-    gSEF = 1 + 9.0*(gD/wt)
+        dSEF = 1 + Crd*np.power(np.power(dD,1.5)*wt/od,0.5)
+        gSEF = 1 + 9.0*(gD/wt)
 
-    # sigma = (MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
-    # sigma = (1/2)*(MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
-    sigma_a = (MAX-MIN)/2
-    sigma = (-1 + np.sqrt(1+4*np.power(sigma_a/uts,2) )) / (2*sigma_a/np.power(uts,2))
+        # this following sigma_a(lternating) has been multiplied by the 2 in the main fatigue life equation
+        # sigma = (MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
 
-    NF = (5622.0/sf)*np.power(uts/(2.0*sigma*gSEF*dSEF),5.26)
+        sigma = (1/2)*(MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
+        # sigma_a = (MAX-MIN)/2
+        # sigma = (-1 + np.sqrt(1+4*np.power(sigma_a/uts,2) )) / (2*sigma_a/np.power(uts,2))
+
+        NF = (5622.0/sf)*np.power(uts/(2.0*sigma*gSEF*dSEF),5.26)
+
+    elif model == 'EPRG-1995':
+    # EPRG-1995 logic
+        dSEF = 2.871*np.power(dD*wt/od,0.5)
+        gSEF = 1 + 9.0*(gD/wt)
+
+        mean_sigma = (MAX+MIN)/2.
+        sigma_a = (MAX-MIN)/2
+
+        B = (sigma_a/uts)/np.power(1- (mean_sigma/uts), 0.5)
+
+        sigma_A_x2 = uts*(B*np.sqrt(4+np.power(B,2)) - np.power(B,2))
+
+        NF = (1/sf)*(1000.0)*np.power((uts-50.0)/(sigma_A_x2*dSEF*gSEF),4.292)
+
+    elif model == 'PETROBRAS':
+    #PETROBRAS logic
+        dLdW = dL/dW
+        dLdD = dL/dD
+        od_wt = od/wt
+
+        conditions = [(dLdW > 0.9) & (dLdW < 2),
+                    dLdW <= 0.9,
+                    (dLdW >= 2) & (dLdD >= 3.0*np.power(od_wt,0.37)),
+                    (dLdW >= 2) & (dLdD < 3.0*np.power(od_wt,0.37))]
+
+        Achoices = [2.40, 2.11, 1.38, 6.50]
+        Bchoices = [0.737, 0.853, 2.398, 0.825]
+
+        A = np.select(conditions, Achoices, default=2.40)
+        B = np.select(conditions, Bchoices, default=0.737)
+        K = A + B*(dD/od)*np.power(od_wt,1.14)
+        ka = 56.1*np.power(uts,-0.719)
+        Se = 0.5*uts*(ka/K)
+        C = uts + 345.0
+        b = (1/6)*np.log10(Se/C)
+        
+        mean_sigma = (MAX+MIN)/2.
+        sigma_a = (MAX-MIN)/2.
+
+        sigma_A_fully_rev = sigma_a/(1 - np.power(mean_sigma/uts,2.0) )
+
+        NF = (1/sf)*np.power(sigma_A_fully_rev/C, 1/b)
 
     return NF
 
@@ -1551,7 +1598,7 @@ class MonteCarlo:
         # dent depth in mm
         dD_run = np.maximum(0.01, norm.ppf(dD_n_7, loc=dPDP * OD * 25.4 * 1.0, scale=tool_D))
 
-        NF = nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr, sf=sf)
+        NF = nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr, sf=sf, model='EPRG-2000')
 
         ## TEST For TMC 20200831
         # ODt = ODm/WTd
@@ -2027,7 +2074,7 @@ if __name__ == '__main__':
     res = MonteCarlo('RD', config=config)
     res.get_data('sample_of_inputs.csv')
     res.run()
-
+    res.merge_result(key='FeatureID').to_clipboard()
     # comparison = pd.concat([mcrun.result[['POE','POE_l','POE_r']],corr.result[['POE','POE_l','POE_r']]],axis=1)
     # tolerance = np.isclose(comparison.iloc[:,0],comparison.iloc[:,3],atol=1e-2)
     # print(comparison)
