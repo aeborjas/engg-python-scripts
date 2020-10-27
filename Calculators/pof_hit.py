@@ -61,6 +61,51 @@ def NG18QFactor(od, wt, flow, T, dD, gD, gL, gA=1.00, units="SI"):
 
     return failStress, Q
 
+def dentGouge_BSIPD6493(od, wt, S, uts, T, P, dD_bRR, gD, gL, q, exL, gA=1.00, units="SI"):
+    '''
+    od  - outside diameter in mm
+    wt  - wall thickness in mm
+    S   - SMYS in MPa
+    uts - ultimate tensile strength in MPa
+    T   - charpy 2/3 toughness in J
+    P   - pressure in kPa
+    dD  - dent aepth at zero pressure, in mm
+    gD  - gouge depth in mm
+    q   - excavator normal impact force in kN
+    exL - excavator tooth length in mm
+    gA  - random gouge orientation factor, dimensionless
+
+    return failStress   - calculated hoop stress resstance in MPa
+    '''
+    cv0 = 110.3     #empirical coefficient in J, for when E is in MPa and ac is in mm2
+    ac = 53.6       #cross sectional area of 2/3 charpy v-notch specimens in mm2
+    E = (30.e6)*6.89476/1000. #Young's modulus in MPa
+    
+    gD_wt = gD/wt
+    # i believe the following 2 parameters are dimensionless
+    Yb = 1.12 - 1.39*(gD_wt) + 7.32*np.power(gD_wt, 2) - 13.1*np.power(gD_wt, 3) + 14.0*np.power(gD_wt, 4)
+    Ym = 1.12 - 0.23*(gD_wt) + 10.6*np.power(gD_wt, 2) - 21.7*np.power(gD_wt, 3) + 30.4*np.power(gD_wt, 4)
+
+    # dD0 = 1.43*np.power(q / ( 0.49*np.power(exL * S * wt, 0.25)*np.sqrt(wt + 0.7*1000.*P/uts) ), 2.381)
+    dD0 = dD_bRR
+
+    # CSAZ662 Annex O
+    # i believe the following 4 parameters are dimensionless
+    Sm = 1. - (1.8*dD0/od)
+    Mt = np.power(1 + (0.52*np.power(gL*gA,2))/(od*wt), 0.5)
+
+    #CSA Z662 indicates that for this term, the gouge depth is divided solely by the Folias factor. However
+    #if this is true, then the units of this factor would be in mm/MPa, which wouldn't cancel out in the main equation
+    b2 = (Sm*(1 - gD/(Mt))) / (1.0*S*(1 - gD/wt))
+    b1 = Sm*Ym + (5.1*Yb*dD0/wt)
+
+    # Stress intensity, in MPa-m**0.5. It's important to pay attention to units. Here should be fine, if we keep cv0 as J, ac in mm2, and E in MPa
+    KIC = np.sqrt(E * cv0 / ac) * np.power(T / cv0, 0.95)
+
+    failStress = (2/(np.pi*b2) )*np.arccos(np.exp( -125.*np.power(np.pi,2)*np.power(b2/b1,2)*(np.power(KIC,2)/(np.pi*gD)) ))
+    
+    return failStress
+
 def force_for_puncture(od, wt, uts, tooth_perimeter, model_error=0.):
     #returns force required to puncture pipe in kN
 ##    failForce = 0.000464*np.power(wt*uts,1.087)*tooth_perimeter
@@ -155,6 +200,8 @@ def pof_hit(df,n):
     Td = norm.ppf(T_n_5, loc=T, scale=sdT)
     Td_23 = Td*(2/3)
     
+    # puncture_force_error = norm.ppf(mE_n_10, loc=0.833, scale=26.7)
+    
     opStr_d = (OP*ODd/1000)/(2*WTd)
 
     #random excavator force (kN)    
@@ -195,6 +242,9 @@ def pof_hit(df,n):
     #Test of Gouge-in-dent failure: NG-18 Q-Factor Relation (results in stress:ksi and Q:ftlb/in)
     failStress, Q = NG18QFactor(ODd, WTd, flStr_d, Td_23, dD_bRR, gD, gL, gA)
     failStress = failStress*6.89476
+
+    #Test of dent-gouge failure: CSA Z662 Annex O Clause O.2.6.3.2, Hopkins et al. 1992 model for EPRG modified by Francis et al. 1997
+    # failStress = dentGouge_BSIPD6493(ODd, WTd, flStr_d, UTSd, Td_23, OP, dD_bRR, gD, gL, exFd, exLd, gA)
     fails_gd, fail_count_gd = ls_gouge_dent_fail(failStress, opStr_d, bulk=True)
 
     #Test of Failure due to Puncture
@@ -249,30 +299,30 @@ def pof_hit(df,n):
     return return_df, qc_df
 
 
-##od = np.array([4., 6.625, 8.625, 10.75, 12.75, 16., 20., 24., 30., 32., 34., 36.])
-##wt = np.linspace(3.20,18.9,num = od.size)
-##t = np.linspace(10.0,25.0,num = od.size)
-####s = np.array([25.,30.,35.,42.,46.,52.,56.,60.,65.,70.,80., 90.])*6.89476
-##
-##od, wt, t = np.meshgrid(od, wt, t)
-##
-##scenarios = od.size
-##
-##df = dict(OD_inch=od.reshape(-1),
-##        WT_mm=wt.reshape(-1),
-##        grade_MPa=np.full(scenarios,359.0),
-##        MAOP_kPa=np.full(scenarios,7000.0),
-##        T_J=t.reshape(-1),
-##        class_loc=np.full(scenarios,"class 1")
-##        )
+od = np.array([4., 6.625, 8.625, 10.75, 12.75, 16., 20., 24., 30., 32., 34., 36.])
+wt = np.linspace(3.20,18.9,num = od.size)
+t = np.linspace(10.0,25.0,num = od.size)
+##s = np.array([25.,30.,35.,42.,46.,52.,56.,60.,65.,70.,80., 90.])*6.89476
 
-df = dict(OD_inch=[24.],
-        WT_mm=[6.35],
-        grade_MPa=[359.0],
-        MAOP_kPa=[5382.418],
-        T_J=[21.7],
-        class_loc=['class 2']
-        )
+od, wt, t = np.meshgrid(od, wt, t)
+
+scenarios = od.size
+
+df = dict(OD_inch=od.reshape(-1),
+       WT_mm=wt.reshape(-1),
+       grade_MPa=np.full(scenarios,359.0),
+       MAOP_kPa=np.full(scenarios,7000.0),
+       T_J=t.reshape(-1),
+       class_loc=np.full(scenarios,"class 4")
+       )
+
+# df = dict(OD_inch=[24.],
+#         WT_mm=[6.35],
+#         grade_MPa=[359.0],
+#         MAOP_kPa=[5382.418],
+#         T_J=[21.7],
+#         class_loc=['class 2']
+#         )
 
 df = pd.DataFrame(df)
 ##df.MAOP_kPa = 0.80*2.0*df.grade_MPa*1000*df.WT_mm/(df.OD_inch*25.4)
@@ -280,7 +330,7 @@ df = pd.DataFrame(df)
 result, qc = pof_hit(df,10000)
 print(result)
 
-def generate_plots(df, col1, col2):
+def generate_plots(df, col1, col2, convert_xticks=False):
     
     pof = df.pivot_table(index=col1,columns=col2,values="fail_pof").values
     pofgd = df.pivot_table(index=col1,columns=col2,values="fail_gD_pof").values
@@ -312,14 +362,18 @@ def generate_plots(df, col1, col2):
     ax[2].set_xlabel(col1)
     ax[1].set_ylabel(col2)
 
+    if convert_xticks:
+        locs, _ = plt.xticks()
+        plt.xticks(locs, (locs/25.4).round(0))
+
     fig.suptitle(f"{col1} versus {col2}")
     fig.subplots_adjust(right=0.8)
     cbar_ax = fig.add_axes([0.85, 0.15, 0.05, 0.7])
     fig.colorbar(cpf, cax=cbar_ax)
 
-##generate_plots(result, "OD", "WT")
-##generate_plots(result, "OD", "T")
-##generate_plots(result, "WT", "T")
+generate_plots(result, "OD", "WT", convert_xticks=True)
+# generate_plots(result, "OD", "T", convert_xticks=True)
+# generate_plots(result, "WT", "T")
 
 def generate_3dplot(df, col1, col2, col3):
     fig = plt.figure()

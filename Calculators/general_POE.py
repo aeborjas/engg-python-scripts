@@ -191,9 +191,9 @@ def nf_EPRG(od, wt, uts, dL, dW, dD, gD, MAX, MIN, sf=1.0, model='EPRG-2000', un
         # this following sigma_a(lternating) has been multiplied by the 2 in the main fatigue life equation
         # sigma = (MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
 
-        sigma = (1/2)*(MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
-        # sigma_a = (MAX-MIN)/2
-        # sigma = (-1 + np.sqrt(1+4*np.power(sigma_a/uts,2) )) / (2*sigma_a/np.power(uts,2))
+        # sigma = (1/2)*(MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
+        sigma_a = (MAX-MIN)/2
+        sigma = (-1 + np.sqrt(1+4*np.power(sigma_a/uts,2) )) / (2*sigma_a/np.power(uts,2))
 
         NF = (5622.0/sf)*np.power(uts/(2.0*sigma*gSEF*dSEF),5.26)
 
