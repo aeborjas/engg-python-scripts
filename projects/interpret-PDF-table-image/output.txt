@@ -1,0 +1,30 @@
+[Running] python -u "c:\Users\armando_borjas\Documents\Python\projects\interpret-PDF-table-image\ocr_image.py"
+Processing page_1.png... Finished. 429.8284 seconds.
+Processing page_10.png... Finished. 537.3227 seconds.
+Processing page_11.png... Finished. 508.2638 seconds.
+Processing page_12.png... Finished. 439.8666 seconds.
+Processing page_13.png... Finished. 413.3053 seconds.
+Processing page_14.png... Finished. 561.1581 seconds.
+Processing page_15.png... Finished. 512.9727 seconds.
+Processing page_16.png... Finished. 565.9531 seconds.
+Processing page_17.png... Finished. 418.9986 seconds.
+Processing page_18.png... Finished. 498.5858 seconds.
+Processing page_19.png... Finished. 510.9292 seconds.
+Processing page_2.png... Finished. 459.8722 seconds.
+Processing page_20.png... Finished. 560.8014 seconds.
+Processing page_21.png... Finished. 477.7954 seconds.
+Processing page_22.png... Finished. 498.6267 seconds.
+Processing page_23.png... Finished. 504.6954 seconds.
+Processing page_24.png... Finished. 636.9595 seconds.
+Processing page_25.png... Finished. 490.9700 seconds.
+Processing page_26.png... Finished. 475.2679 seconds.
+Processing page_3.png... Finished. 536.2405 seconds.
+Processing page_4.png... Finished. 550.8788 seconds.
+Processing page_5.png... Finished. 387.4547 seconds.
+Processing page_6.png... Finished. 589.1803 seconds.
+Processing page_7.png... Finished. 533.4282 seconds.
+Processing page_8.png... Finished. 564.6903 seconds.
+Processing page_9.png... Finished. 820.3119 seconds.
+Completed. 13484.3596 seconds.
+
+[Done] exited with code=0 in 13486.324 seconds

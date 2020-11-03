@@ -118,7 +118,7 @@ def corrpoe(df, n, cga_rate=10):
     meanS = 1.10 #recommended from CSA Z662 2019
     sdS = 0.035 #recommended from CSA Z662 2019
 
-    tool_D = 0.078 # in fraction WT
+    tool_D = 0.078 * WT# in fraction WT
     tool_L = 7.80 / 25.4 # in inches
 
     # OD and MOP are not distributed in this approach. This function creates an array of size (n,i) of repeating OD and OP values.
@@ -140,19 +140,29 @@ def corrpoe(df, n, cga_rate=10):
     fL = np.maximum(0, norm.ppf(fL_n_5, loc=fL_measured * 1.0 * (1 / 25.4), scale=tool_L))
 
     # the following statement distributes the feature depth in inches, using normal distribution, and ensures the depth is not distributed below 0.0 mm.
-    fD_run = np.maximum(0, norm.ppf(fD_n_6, loc=fPDP * WT * 1.0, scale=tool_D * WT))
+    fD_run = np.maximum(0, norm.ppf(fD_n_6, loc=fPDP * WT * 1.0, scale=tool_D))
 
     # the following statement applies the growth rate assumptions. where vendor provided growth rate data is provided, use it, otherwise use the shape and scale parameters as part of the sample_inputs.csv
     # the np.where() function is used to make conditional checks of arrays.
     # Please refer to the "cgr.py" file for the details on the cgr_mpy() and cgr_weibull() functions
-    fD_GR = np.where(np.isnan(f_v_CGR),
-                    np.where(fD_run>0.40,
-                            (fD_run)/((Insp-Inst).dt.days.values/365.25),
-                            np.maximum(0, cgr.cgr_weibull(fGR_n_7, shape, scale) / 25.4)),
-                            np.maximum(0, norm.ppf(fGR_n_7, loc=f_v_CGR * 1.0 * (1/25.4), scale=f_v_sd_CGR * (1/25.4))))
+    
+    # alpha = f_v_CGR / f_v_sd_CGR
+    alpha = 0.0
+
+## Original PPL Logic.
+##    fD_GR = np.where(np.isnan(f_v_CGR),
+##                    np.where(fD_run>0.40,
+##                            (fD_run)/((Insp-Inst).dt.days.values/365.25),
+##                            np.maximum(0, cgr.cgr_weibull(fGR_n_7, shape, scale) / 25.4)),
+##                            np.where(alpha > 0.25,
+##                                    np.maximum(0, norm.ppf(fGR_n_7, loc=f_v_CGR * 1.0 * (1/25.4), scale=f_v_sd_CGR * (1/25.4))),
+##                                    np.maximum(0, cgr.cgr_weibull(fGR_n_7, shape, scale) / 25.4)))
+
+## 2020-08-18 Request by Scott and Tyler
+    fD_GR = np.maximum(0, norm.ppf(fGR_n_7, loc=f_v_CGR * 1.0 * (1/25.4), scale=f_v_sd_CGR * (1/25.4)))
 
     # calculating the depth at the year of analysis
-    fD = fD_run + fD_GR * time_delta
+    fD = fD_run + fD_GR * 0
 
     # calculating the Failure Stress in psi. 
     # Please refer to the "failureStress.py" file for the details on the calculation.
@@ -163,7 +173,7 @@ def corrpoe(df, n, cga_rate=10):
 
     # comparing the failure pressures to the operating pressure of the pipeline. This statement sums the n rows vertically for each i, to determine the number of times the limit was exceeded.
     # Please refer to the "corrLimitStates.py" file for details on the limit state checking.
-    ruptures, rupture_count = corrLimitStates.ls_corr_rupture(failPress, OP, bulk=True)
+    ruptures, rupture_count = corrLimitStates.ls_corr_rupture(failPress, OP, thresh=1.25, bulk=True)
 
     # comparing the depth at year of analysis with the wall thickness to see if the 80.0%WT criteria is exceeded. This statement sums the n rows vertically for each i, to determine the number of times the limit was exceeded.
     # Please refer to the "corrLimitStates.py" file for details on the limit state checking.
@@ -174,12 +184,12 @@ def corrpoe(df, n, cga_rate=10):
     fails, fail_count = corrLimitStates.ls_corr_tot(ruptures, leaks, bulk=True)
 
     # setting up the projection of 10 years after year of analysis.
-    failure_projection = {'leaks':[None]*20,
-                         'ruptures':[None]*20,
-                         'fails':[None]*20}
+    failure_projection = {'leaks':[None]*30,
+                         'ruptures':[None]*30,
+                         'fails':[None]*30}
     
     # Calculate POE for each of 10 years from year of analysis
-    for x in range(20):
+    for x in range(30):
         # Add 1 year of corrosion growth
         fD += fD_GR*(1.0)
         
@@ -190,7 +200,7 @@ def corrpoe(df, n, cga_rate=10):
         failPress = 2 * failure_stress * WTd / OD
 
         # redetermine limit state exceedances
-        rupture_proj, failure_projection['ruptures'][x] = corrLimitStates.ls_corr_rupture(failPress, OP, bulk=True)
+        rupture_proj, failure_projection['ruptures'][x] = corrLimitStates.ls_corr_rupture(failPress, OP, thresh=1.25, bulk=True)
         leak_proj, failure_projection['leaks'][x] = corrLimitStates.ls_corr_leak(WTd, fD, bulk=True)
         _, failure_projection['fails'][x] = corrLimitStates.ls_corr_tot(rupture_proj, leak_proj, bulk=True)
         
@@ -198,6 +208,7 @@ def corrpoe(df, n, cga_rate=10):
     return_dict = {"FeatureID":fID,
                    "PDP_frac": fPDP,
                    "flength": fL_measured,
+                   "alpha":alpha,
                    "iterations": np.size(fails, axis=0),
                    "rupture_count_YOA": rupture_count,
                    "leak_count_YOA": leak_count,
@@ -262,6 +273,36 @@ def corrpoe(df, n, cga_rate=10):
                    "rupture_count_Y20": failure_projection['ruptures'][19],
                    "leak_count_Y20": failure_projection['leaks'][19],
                    "fail_count_Y20": failure_projection['fails'][19],
+                   "rupture_count_Y21": failure_projection['ruptures'][20], ###### special request for Scott and Tyler 2020-08-18
+                   "leak_count_Y21": failure_projection['leaks'][20],
+                   "fail_count_Y21": failure_projection['fails'][20],
+                   "rupture_count_Y22": failure_projection['ruptures'][21],
+                   "leak_count_Y22": failure_projection['leaks'][21],
+                   "fail_count_Y22": failure_projection['fails'][21],
+                   "rupture_count_Y23": failure_projection['ruptures'][22],
+                   "leak_count_Y23": failure_projection['leaks'][22],
+                   "fail_count_Y23": failure_projection['fails'][22],
+                   "rupture_count_Y24": failure_projection['ruptures'][23],
+                   "leak_count_Y24": failure_projection['leaks'][23],
+                   "fail_count_Y24": failure_projection['fails'][23],
+                   "rupture_count_Y25": failure_projection['ruptures'][24],
+                   "leak_count_Y25": failure_projection['leaks'][24],
+                   "fail_count_Y25": failure_projection['fails'][24],
+                   "rupture_count_Y26": failure_projection['ruptures'][25],
+                   "leak_count_Y26": failure_projection['leaks'][25],
+                   "fail_count_Y26": failure_projection['fails'][25],
+                   "rupture_count_Y27": failure_projection['ruptures'][26],
+                   "leak_count_Y27": failure_projection['leaks'][26],
+                   "fail_count_Y27": failure_projection['fails'][26],
+                   "rupture_count_Y28": failure_projection['ruptures'][27],
+                   "leak_count_Y28": failure_projection['leaks'][27],
+                   "fail_count_Y28": failure_projection['fails'][27],
+                   "rupture_count_Y29": failure_projection['ruptures'][28],
+                   "leak_count_Y29": failure_projection['leaks'][28],
+                   "fail_count_Y29": failure_projection['fails'][28],
+                   "rupture_count_Y30": failure_projection['ruptures'][29],
+                   "leak_count_Y30": failure_projection['leaks'][29],
+                   "fail_count_Y30": failure_projection['fails'][29],
                    "nan": np.zeros((i,))
                    }
     # converting the container to a tabulat object using pandas
@@ -270,7 +311,7 @@ def corrpoe(df, n, cga_rate=10):
     return return_df
 
 #the next statement loads the CSV into a pandas dataframe
-CSV_FILE_NAME = 'sample_of_inputs.csv'
+CSV_FILE_NAME = 'FTS sample_of_inputs for Armando Rock Tunnel 08312020.csv'
 CSV_FILE_NAME = abspath(join(dirname(__file__), CSV_FILE_NAME))
 
 df = pd.read_csv(CSV_FILE_NAME, header=0)
@@ -280,51 +321,27 @@ print('Features loaded...')
 #   calculates the time delta between the ILI and the pipe installation date
 #   calculates the linear full-life growth rate for each feature
 
-# (UPDATE) **************************************
 df.fillna({'incubation_yrs':10.0}, inplace=True)
 df.install_date = pd.to_datetime(df.install_date)
 df.ILIRStartDate = pd.to_datetime(df.ILIRStartDate)
-# (UPDATE) *****************************************
 df.loc[:, 'ILI_age_yrs'] = (df.ILIRStartDate - df.install_date).dt.days/365.25
-df.loc[:, 'time_delta'] = np.minimum(40.-df.loc[:,'incubation_yrs'], df.ILI_age_yrs)
-df.loc[:, 'growth_rate_mmpyr'] = (df.depth_fraction*df.WT_mm)/df.time_delta
+df.loc[:, 'growth_rate_mmpyr'] = (df.depth_fraction*df.WT_mm)/df.ILI_age_yrs
 print('Growth rates calculated. Fitting Weibull distributions...')
 
-# Assumption #1 for growth rate, uses the weibull_fitter.py function
-#   filters applies conditional statement to detect whether features is internal or external, filters out anything with a CGR less than 0.01mm/yr, and features in pipe older than 5y
-# Assumption #2, uses the weibull_fitter.py function
-#   filters applies conditional statement to detect whether features is internal or external, filters out anything with a CGR less than 0.01mm/yr, and features in pipe younger than 5y or older than 40y
-# Assumption #3, uses the weibull_fitter.py function
-#   filters applies conditional statement to detect whether features is internal or external, filters out anything with a CGR less than 0.01mm/yr, and features in pipe younger than 40y
-# The following strings are the filters for the dataframe for each of the assumptions.
 
-# (UPDATE) *************************************************
-noise_filter = "growth_rate_mmpyr>0.001"
-##query_1_e = "time_delta < 5."
-##query_2_e = "time_delta < 40. & time_delta >= 5"
-##query_3_e = "time_delta >= 40."
-
-query_1_e = "ILIFSurfaceInd.str.contains('E') & time_delta < 5."
-query_1_i = "ILIFSurfaceInd.str.contains('I') & time_delta < 5."
-query_2_e = "ILIFSurfaceInd.str.contains('E') & time_delta < 40. & time_delta >= 5"
-query_2_i = "ILIFSurfaceInd.str.contains('I') & time_delta < 40. & time_delta >= 5"
-query_3_e = "ILIFSurfaceInd.str.contains('E') & time_delta >= 40."
-query_3_i = "ILIFSurfaceInd.str.contains('I') & time_delta >= 40."
+## UPDATE: Now we are only checking for age at ILI less than 5 and greater than or equal to 5.
+query_1 = "ILI_age_yrs < 5."
+query_2 = "ILI_age_yrs >= 5"
 
 depthScale = 0.30
 
-#following statements calculate weibull distributions for each of the 3 assumptions, and sets the shape and scale parameters for the features, in accordance to each feature's assumption to use
-df = df.combine_first(df.apply(lambda x: [1.24959, 0.107359 + depthScale * ((x.depth_fraction-0.2))],result_type='expand', axis=1).loc[df.query(query_1_e).index,:])
-df = df.combine_first(df.apply(lambda x: [1.24959, 0.107359 + depthScale * ((x.depth_fraction-0.2))],result_type='expand', axis=1).loc[df.query(query_1_i).index,:])
+## UPDATE
+#following statements calculate weibull distributions for each of the 2 assumptions, and sets the shape and scale parameters for the features, in accordance to each feature's assumption to use
+df = df.combine_first(df.apply(lambda x: [1.24959, 0.107359 + depthScale * ((x.depth_fraction-0.2))],result_type='expand', axis=1).loc[df.query(query_1).index,:])
 print('CGR Assumption #1 determined...')
 
-df = df.combine_first(df.apply(lambda x: weibull_fitter(df.query(f"{query_2_e}").loc[:,['growth_rate_mmpyr']]),result_type='expand', axis=1).loc[df.query(query_2_e).index,:])
-df = df.combine_first(df.apply(lambda x: weibull_fitter(df.query(f"{query_2_i}").loc[:,['growth_rate_mmpyr']]),result_type='expand', axis=1).loc[df.query(query_2_i).index,:])
+df = df.combine_first(df.apply(lambda x: [1.24959, 0.107359 + depthScale * ((x.depth_fraction/(x.ILI_age_yrs/5)-0.2))],result_type='expand', axis=1).loc[df.query(query_2).index,:])
 print('CGR Assumption #2 determined...')
-
-df = df.combine_first(df.apply(lambda x: weibull_fitter(df.query(f"{query_3_e}").loc[:,['growth_rate_mmpyr']]),result_type='expand', axis=1).loc[df.query(query_3_e).index,:])
-df = df.combine_first(df.apply(lambda x: weibull_fitter(df.query(f"{query_3_i}").loc[:,['growth_rate_mmpyr']]),result_type='expand', axis=1).loc[df.query(query_3_i).index,:])
-print('CGR Assumption #3 determined...')
 
 df.rename({0:'shape',1:'scale'}, axis=1, inplace=True)
 
@@ -339,12 +356,134 @@ else:
     df = df.loc[lambda x: (x.FeatureID.isin(filters['FeatureIDs']))]
       
 print('Calculating POE...')
-iter = 1_000_00
+iterations = 1_000_000
+split_iterations = False
+iterations_split = 10
 s1 = time.time()
-result = corrpoe(df,iter)
+
+if not(split_iterations):
+    result = corrpoe(df,iterations)
+else:
+    split = iterations//iterations_split
+    if split >= iterations:
+        raise AttributeError("Please select a higher number to split iterations.")
+    remainder = iterations - split*iterations_split
+    if remainder == 0:
+        iter_list = [split]*iterations_split
+    else:
+        iter_list = [split]*iterations_split + [remainder]
+
+    update_cols = ["iterations",
+                    "rupture_count_YOA",
+                    "leak_count_YOA",
+                    "fail_count_YOA",
+                    "rupture_count_Y1",
+                    "leak_count_Y1",
+                    "fail_count_Y1",
+                    "rupture_count_Y2",
+                    "leak_count_Y2",
+                    "fail_count_Y2",
+                    "rupture_count_Y3",
+                    "leak_count_Y3",
+                    "fail_count_Y3",
+                    "rupture_count_Y4",
+                    "leak_count_Y4",
+                    "fail_count_Y4",
+                    "rupture_count_Y5",
+                    "leak_count_Y5",
+                    "fail_count_Y5",
+                    "rupture_count_Y6",
+                    "leak_count_Y6",
+                    "fail_count_Y6",
+                    "rupture_count_Y7",
+                    "leak_count_Y7",
+                    "fail_count_Y7",
+                    "rupture_count_Y8",
+                    "leak_count_Y8",
+                    "fail_count_Y8",
+                    "rupture_count_Y9",
+                    "leak_count_Y9",
+                    "fail_count_Y9",
+                    "rupture_count_Y10",
+                    "leak_count_Y10",
+                    "fail_count_Y10",
+                    "rupture_count_Y11",
+                    "leak_count_Y11",
+                    "fail_count_Y11",
+                    "rupture_count_Y12",
+                    "leak_count_Y12",
+                    "fail_count_Y12",
+                    "rupture_count_Y13",
+                    "leak_count_Y13",
+                    "fail_count_Y13",
+                    "rupture_count_Y14",
+                    "leak_count_Y14",
+                    "fail_count_Y14",
+                    "rupture_count_Y15",
+                    "leak_count_Y15",
+                    "fail_count_Y15",
+                    "rupture_count_Y16",
+                    "leak_count_Y16",
+                    "fail_count_Y16",
+                    "rupture_count_Y17",
+                    "leak_count_Y17",
+                    "fail_count_Y17",
+                    "rupture_count_Y18",
+                    "leak_count_Y18",
+                    "fail_count_Y18",
+                    "rupture_count_Y19",
+                    "leak_count_Y19",
+                    "fail_count_Y19",
+                    "rupture_count_Y20",
+                    "leak_count_Y20",
+                    "fail_count_Y20",
+                    "rupture_count_Y21",
+                    "leak_count_Y21",
+                    "fail_count_Y21",
+                    "rupture_count_Y22",
+                    "leak_count_Y22",
+                    "fail_count_Y22",
+                    "rupture_count_Y23",
+                    "leak_count_Y23",
+                    "fail_count_Y23",
+                    "rupture_count_Y24",
+                    "leak_count_Y24",
+                    "fail_count_Y24",
+                    "rupture_count_Y25",
+                    "leak_count_Y25",
+                    "fail_count_Y25",
+                    "rupture_count_Y26",
+                    "leak_count_Y26",
+                    "fail_count_Y26",
+                    "rupture_count_Y27",
+                    "leak_count_Y27",
+                    "fail_count_Y27",
+                    "rupture_count_Y28",
+                    "leak_count_Y28",
+                    "fail_count_Y28",
+                    "rupture_count_Y29",
+                    "leak_count_Y29",
+                    "fail_count_Y29",
+                    "rupture_count_Y30",
+                    "leak_count_Y30",
+                    "fail_count_Y30",'nan']
+
+    result = corrpoe(df,iter_list.pop())
+    for i, count in enumerate(iter_list):
+        print(f"Performing {i+2}th iteration...")
+        result[update_cols] = result[update_cols] + corrpoe(df,count)[update_cols]
+
+
 print(f'Done. {time.time() - s1:.4f} seconds')
 
-result.iloc[:, 3:] = result.iloc[:,3:].apply(lambda x: x/iter)#.applymap('{:.3e}'.format)
+result.iloc[:, 4:] = result.iloc[:,4:].apply(lambda x: x/iterations)#.applymap('{:.3e}'.format)
 result.loc[:,'iterations'] = result.loc[:,'iterations'].apply('{:,.0f}'.format)
 
-df.set_index('FeatureID').join(result).loc[:,:].to_csv("sample_of_outputs.csv")
+df.set_index('FeatureID').join(result).loc[:,:].to_csv("fortis_outputs.csv")
+
+
+
+## Excerpt from general_POE.py to calculate 10MM iterations and more
+# if not(split_iterations):
+#     self.result, self.qc = self.mcpoe(self.df,self.iterations)
+# else:

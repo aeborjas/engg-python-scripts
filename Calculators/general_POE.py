@@ -189,9 +189,24 @@ def nf_EPRG(od, wt, uts, dL, dW, dD, gD, MAX, MIN, sf=1.0, model='EPRG-2000', un
         gSEF = 1 + 9.0*(gD/wt)
 
         # this following sigma_a(lternating) has been multiplied by the 2 in the main fatigue life equation
-        # sigma = (MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
+        sigma = (MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
 
-        # sigma = (1/2)*(MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
+        sigma = (1/2)*(MAX-MIN)/(1- np.power((MAX+MIN)/(2.0*uts),2.0) )
+
+        NF = (5622.0/sf)*np.power(uts/(2.0*sigma*gSEF*dSEF),5.26)
+
+    elif model == 'Refined-EPRG-2000':
+    # EPRG-2000 logic
+        dRL = (np.power(dL, 2.0) + 4.0 * np.power(dD, 2.0)) / (8.0 * dD)
+        dRW = (np.power(dW, 2.0) + 4.0 * np.power(dD, 2.0)) / (8.0 * dD)
+        dR = np.minimum(dRW, dRL)
+
+        Crd = np.where(dR < 5.0*wt, 1.0, 2.0)
+
+        dSEF = 1 + Crd*np.power(np.power(dD,1.5)*wt/od,0.5)
+        gSEF = 1 + 9.0*(gD/wt)
+
+        # this following sigma_a(lternating) has been multiplied by the 2 in the main fatigue life equation
         sigma_a = (MAX-MIN)/2
         sigma = (-1 + np.sqrt(1+4*np.power(sigma_a/uts,2) )) / (2*sigma_a/np.power(uts,2))
 
@@ -1530,8 +1545,8 @@ class MonteCarlo:
         tool = df['tool'].values
         Insp = df['ILIRStartDate']
 
-        # time_delta = (self.now - Inst).dt.days.values / 365.25
-        time_delta = (self.now - Insp).dt.days.values / 365.25
+        time_delta = (self.now - Inst).dt.days.values / 365.25
+        # time_delta = (self.now - Insp).dt.days.values / 365.25
 
         # Sensitivity Factor
         sf = 1
@@ -1598,7 +1613,7 @@ class MonteCarlo:
         # dent depth in mm
         dD_run = np.maximum(0.01, norm.ppf(dD_n_7, loc=dPDP * OD * 25.4 * 1.0, scale=tool_D))
 
-        NF = nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr, sf=sf, model='EPRG-2000')
+        NF = nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr, sf=sf, model='PETROBRAS')
 
         ## TEST For TMC 20200831
         # ODt = ODm/WTd
@@ -2056,7 +2071,7 @@ if __name__ == '__main__':
         # return kwargs['depth']/kwargs['ILI_age']
 
     config = dict(iterations=1_000_000,
-                run_date='2020-03-01',
+                run_date='2019-12-01',
     #cgr=cgr
     )
     # corr = MonteCarlo('CORR', config=config)
@@ -2071,10 +2086,16 @@ if __name__ == '__main__':
     # mcrun.df = mcrun.df.iloc[0:10]
     # mcrun.special_run()
 
+
+    folder_path = r"C:\\Users\\armando_borjas\\Documents\\Filed Work\\PMC\\Resident Damage Tests\\"
+
+    input_filename = "20201103_res_tests.csv"
+    output_filename = "output_PETROBRAS_20201103_res_tests.csv"
+
     res = MonteCarlo('RD', config=config)
-    res.get_data('sample_of_inputs.csv')
+    res.get_data(folder_path+input_filename)
     res.run()
-    res.merge_result(key='FeatureID').to_clipboard()
+    res.merge_result(key='FeatureID').to_csv(folder_path+output_filename)
     # comparison = pd.concat([mcrun.result[['POE','POE_l','POE_r']],corr.result[['POE','POE_l','POE_r']]],axis=1)
     # tolerance = np.isclose(comparison.iloc[:,0],comparison.iloc[:,3],atol=1e-2)
     # print(comparison)
