@@ -5,7 +5,7 @@ import cx_Oracle
 import numpy as np
 import os
 
-def sqlite_sql(q, path=r"C:\Users\armando_borjas\Documents\EEC_20200317-system.db"):
+def sqlite_sql(q, path=r"C:\Users\XXXXXX\Documents\XXX_20200317-system.db"):
 
     # Read sqlite query results into a pandas DataFrame
     conn = sqlite3.connect(path)
@@ -14,7 +14,7 @@ def sqlite_sql(q, path=r"C:\Users\armando_borjas\Documents\EEC_20200317-system.d
     conn.close()
     return df
 
-def sqlserver_sql(q, server = 'SQL2017', db = 'plains_irasv6_stage'):
+def sqlserver_sql(q, server = 'XXXXXX', db = 'XXXX_XXXXXX_XXXXX'):
     driver = '{SQL Server Native Client 11.0}'
     conn = pyodbc.connect("Driver="+driver+";Server="+server+";Database="+db+";Trusted_Connection=yes;")
 
@@ -24,7 +24,7 @@ def sqlserver_sql(q, server = 'SQL2017', db = 'plains_irasv6_stage'):
     conn.close()
     return df
 
-def oracle_sql(q,user=r'ug_irasv6_gtech_poe_stage', password='ug', dsn='ORA12C'):
+def oracle_sql(q,user=r'XXXX_XXXXXX_XXXXX', password='ug', dsn='XXXXXX'):
     conn = cx_Oracle.connect(user, password, dsn)
 
     t_data = pd.read_sql_query(q,conn)
@@ -310,5 +310,5 @@ def get_cracks_by_id(id):
     return sqlserver_sql(q2)
 
 if __name__ == '__main__':
-    ids = pd.read_csv(r'C:\Users\armando_borjas\Documents\Python\Calculators\2020-03-27\ids.csv')
+    ids = pd.read_csv(path)
     print(get_cracks_by_id(ids.Id))
