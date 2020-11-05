@@ -1,75 +1,11 @@
 Calculators/Archive/*
-__pycache__/model.cpython-36.pyc
-__pycache__/useful_func.cpython-36.pyc
-.idea/misc.xml
-.idea/modules.xml
-.idea/Python.iml
-.idea/rGraphicsSettings.xml
-.idea/rpackages.xml
-.idea/rSettings.xml
-.idea/vcs.xml
-.idea/workspace.xml
-.idea/inspectionProfiles/profiles_settings.xml
-.ipynb_checkpoints/ATCO - Risk Data QC-checkpoint.ipynb
-.ipynb_checkpoints/Data Analysis using Pandas-checkpoint.ipynb
-.ipynb_checkpoints/Data Integrity Check using DVL-checkpoint.ipynb
-.ipynb_checkpoints/Data Overlap and Data Span Check using Pandas-checkpoint.ipynb
-.ipynb_checkpoints/IPL Risk QC-checkpoint.ipynb
-.ipynb_checkpoints/IPL Stationing QC between INTERCHANGE and STAGE-checkpoint.ipynb
-.ipynb_checkpoints/Monte Carlo POE Notebook-checkpoint.ipynb
-.ipynb_checkpoints/MS Word Processing with docx-checkpoint.ipynb
-.ipynb_checkpoints/ONEGAS Data Check-checkpoint.ipynb
-.ipynb_checkpoints/Oracle_DataCheck_using_Pandas-checkpoint.ipynb
-.ipynb_checkpoints/PMC Data Distribution-checkpoint.ipynb
-.ipynb_checkpoints/Query SQLite Database-checkpoint.ipynb
-.ipynb_checkpoints/Reading Data Config File-checkpoint.ipynb
-.ipynb_checkpoints/Risk QC-checkpoint.ipynb
-.ipynb_checkpoints/Risk Results Analysis using Pandas-checkpoint.ipynb
-.ipynb_checkpoints/UGEA Analysis-checkpoint.ipynb
-.ipynb_checkpoints/Using SA to Interrogate Models-checkpoint.ipynb
-.vs/slnx.sqlite
-.vs/VSWorkspaceState.json
-.vs/Python/v15/.suo
-.vscode/launch.json
-.vscode/settings.json
-.vscode/tasks.json
-experimental/analyze_comments.py
-experimental/analyze_featuresample_output.csv
-experimental/boxplot_tut.py
-experimental/cscc_bulk_offline_length.xlsx
-experimental/cscc_bulk_offline_width.xlsx
-experimental/cscc_bulk_offline.xlsx
-experimental/cscc-output_100k_length.csv
-experimental/cscc-output-10k.csv
-experimental/feature_class.py
-experimental/feature_comments.csv
-experimental/fig1.png
-experimental/filever.py
-experimental/GIS_script.py
-experimental/GUITUT.py
-experimental/guiTUT2.py
-experimental/map_plotter.py
-experimental/NPS12-Hartell-to-Pincher-Creek-From-2-29-19-2-W5-To-16-14-4-29-W4.csv
-experimental/pandasTUT_2.py
-experimental/Plains Quantitative Risk Algorithm.var
-experimental/plot_line.py
-experimental/plot_matrix_as_density.py
-experimental/PMC_data_variables_output_2019-02-04-120154.xlsx
-experimental/reportable_dyn_seg.csv
-experimental/risk_qc.py
-experimental/sankey_basics.py
-experimental/sql_magic.py
-experimental/test_bulk_poe_2.csv
-experimental/test_bulk_poe_3.csv
-experimental/test_bulk_poe.csv
-experimental/testingVSJUP.py
-experimental/testNCD.csv
-experimental/TPD_FAULT_TREE.py
-experimental/wikipediaTUT.py
-notebooks/.ipynb_checkpoints/ATCO - Risk Data QAQC and Analysis-checkpoint.ipynb
-notebooks/.ipynb_checkpoints/Equivalent Pressure Cycles Calculator-checkpoint.ipynb
-notebooks/.ipynb_checkpoints/Monte Carlo POE Notebook-checkpoint.ipynb
-notebooks/.ipynb_checkpoints/Sympy Formulae-checkpoint.ipynb
+__pycache__/*
+.ipynb_checkpoints/*
+.idea/*
+.vs/*
+.vscode/*
+experimental/*
+notebooks/*
 Calculators/fortis_outputs (20201008 rock tunnel feature dist).csv
 Calculators/fortis_outputs (20201008 rock tunnel feature matrix).csv
 Calculators/FTS sample_of_inputs for Armando Open Air 09252020.csv
