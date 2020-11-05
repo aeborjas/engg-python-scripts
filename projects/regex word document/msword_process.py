@@ -6,11 +6,8 @@ import os
 # This script takes in a word document, performs regular expressions to
 # search for a pattern, and replaces the sentence with a pattern.
 
-report = "Plains Midstream 2019 DRAFT Risk Report_r1.0 .docx"
-report2 = "Plains Midstream 2019 DRAFT Risk Report_r1.0 (ALT) .docx"
-
-##report = 'Plains Midstream 2019 DRAFT Risk Report Attachments_r1.0 .docx'
-##report2 = 'Plains Midstream 2019 DRAFT Risk Report Attachments_r1.0 (ALT) .docx'
+report = "Sample DRAFT Report_r1.0 .docx"
+report2 = "Sample DRAFT Report_r1.0 (ALT) .docx"
 
 def docx_replace_regex(doc_obj, regex , replace):
     '''searches a document (doc_obj) and locates regex,

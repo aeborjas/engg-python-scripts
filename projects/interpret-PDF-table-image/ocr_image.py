@@ -32,7 +32,7 @@ except ImportError:
 #     f.write(text)
 
 # start at pg 95, end in pg 120
-path = os.path.abspath(os.path.join(os.path.dirname(__file__),'Rossdale Transmission Indirect Inspection Report Final Dec 2014.pdf'))
+path = os.path.abspath(os.path.join(os.path.dirname(__file__),'Indirect Inspection Report Final Dec 2014.pdf'))
 
 #Part 1, convert pages from PDF into images
 # pages = convert_from_path(path, 300, first_page=95, last_page=120)

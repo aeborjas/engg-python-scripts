@@ -8,10 +8,10 @@ pd.set_option('display.max_columns',500)
 
 os.chdir(r'N:\Python')
 
-dpath = r"N:\Python\Inter Pipeline Semi-Quantitative Risk Algorithm.data.config"
+dpath = r"Risk Algorithm.data.config"
 
-server = 'sql2017'
-config_db = 'ipl_irasv6_config'
+server = 'x'
+config_db = 'y'
 
 now_str = datetime.datetime.now().strftime('%Y-%m-%d')
 name = dpath.split("\\")[-1].split(".")[0][:20]
