@@ -643,9 +643,9 @@ class MonteCarlo:
             self.iterations = 10
 
         if 'run_date' in self.config:
-            self.now = datetime.datetime.strptime(self.config['run_date'], '%Y-%m-%d').date()
+            self.now = np.datetime64(datetime.datetime.strptime(self.config['run_date'], '%Y-%m-%d').date())
         else:
-            self.now = datetime.date.today()
+            self.now = np.datetime64(datetime.date.today())
 
         if 'weibull_shape' in self.config:
             self.weibull_shape = self.config['weibull_shape']
@@ -1545,8 +1545,8 @@ class MonteCarlo:
         tool = df['tool'].values
         Insp = df['ILIRStartDate']
 
-        time_delta = (self.now - Inst).dt.days.values / 365.25
-        # time_delta = (self.now - Insp).dt.days.values / 365.25
+        # time_delta = (self.now - Inst).dt.days.values / 365.25
+        time_delta = (self.now - Insp).dt.days.values / 365.25
 
         # Sensitivity Factor
         sf = 1
@@ -1613,7 +1613,7 @@ class MonteCarlo:
         # dent depth in mm
         dD_run = np.maximum(0.01, norm.ppf(dD_n_7, loc=dPDP * OD * 25.4 * 1.0, scale=tool_D))
 
-        NF = nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr, sf=sf, model='PETROBRAS')
+        NF = nf_EPRG(ODd, WTd, UTSd, dL_run, dW_run, dD_run, gD, MAXStr, MINStr, sf=sf, model='Refined-EPRG-2000')
 
         ## TEST For TMC 20200831
         # ODt = ODm/WTd
@@ -2070,8 +2070,7 @@ if __name__ == '__main__':
         # return 12.5/1000.
         # return kwargs['depth']/kwargs['ILI_age']
 
-    config = dict(iterations=1_000_000,
-                run_date='2019-12-01',
+    config = dict(iterations=100_000
     #cgr=cgr
     )
     # corr = MonteCarlo('CORR', config=config)
@@ -2087,10 +2086,11 @@ if __name__ == '__main__':
     # mcrun.special_run()
 
 
-    folder_path = r"C:\\Users\\armando_borjas\\Documents\\Filed Work\\PMC\\Resident Damage Tests\\"
+    # folder_path = r"C:\\Users\\armando_borjas\\Documents\\Filed Work\\PMC\\Resident Damage Tests\\"
+    folder_path = r"C:\\Users\\armando_borjas\\Documents\\Python\\Calculators\\"
 
-    input_filename = "20201103_res_tests.csv"
-    output_filename = "output_PETROBRAS_20201103_res_tests.csv"
+    input_filename = "sample_of_inputs.csv"
+    output_filename = "output__res_tests.csv"
 
     res = MonteCarlo('RD', config=config)
     res.get_data(folder_path+input_filename)
