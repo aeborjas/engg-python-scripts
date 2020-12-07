@@ -1409,8 +1409,8 @@ class MonteCarlo:
         tool = df['tool'].values
         Insp = df['ILIRStartDate']
 
-        # time_delta = (self.now - Inst).dt.days.values / 365.25
-        time_delta = (self.now - Insp).dt.days.values / 365.25
+        time_delta = (self.now - Inst).dt.days.values / 365.25
+        # time_delta = (self.now - Insp).dt.days.values / 365.25
 
         # Sensitivity Factor
         sf = 1
@@ -1550,23 +1550,33 @@ if __name__ == '__main__':
 
     pd.set_option('display.max_columns',500)
     
+    def output_to_qc_folder(calc, name, folder=r'C:\Users\armando_borjas\Documents\PMC_MonteCarloQAQC_20201207'):
+        calc.merge_result(key='FeatureID').to_csv(folder + '\\' + name + '.csv')
+        print('Exported!')
 
-    config = dict(iterations=1000_000,
+    config = dict(iterations=100_000,
                     model = 'CORR'
     )
 
-    class PMC(MonteCarlo):
-        def __init__(self, config):
-            super().__init__(config)
-        
-        def corr_d_cgr(self, **kwargs):
-            return 0.1
 
-    corr = MonteCarlo(config=config)
+    cor = MonteCarlo(config)
+    cor.get_data_from_csv(r"sample_of_inputs.csv")
+    cor.run()
+    print(cor.merge_result(key='FeatureID'))
+    print(1 - np.product(1 - cor.result['POE']))
+    # output_to_qc_folder(cor, 'senlac_unity_kp3179.499_OK')    
+
+    # class PMC(MonteCarlo):
+        
+    #     def corr_d_cgr(self, **kwargs):
+    #         return 0.1 / 25.4
+        
+
+    # corr = PMC(config=config)
     
-    corr.get_data_from_csv(r'D:/User/OneDrive/Projects/Python/from work/Calculators/sample_of_inputs.csv')
-    corr.run()
-    print(corr.result)
+    # corr.get_data_from_csv(r'sample_of_inputs.csv')
+    # corr.run()
+    # print(corr.result)
 
     # folder_path = r"C:\\Users\\armando_borjas\\Documents\\Filed Work\\PMC\\Resident Damage Tests\\"
     #folder_path = r"C:\\Users\\armando_borjas\\Documents\\Python\\Calculators\\"
