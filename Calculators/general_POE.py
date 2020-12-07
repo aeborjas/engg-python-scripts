@@ -30,36 +30,7 @@ def ultimate_determiner(grade):
     index_match = np.searchsorted(lookupUTS[:,0], grade)
     return lookupUTS[index_match,1]
 
-#CGA
-def cgr_mpy(mpy=10.0):
-    """
-    :param mpy: imperfection growth rate in mili-inches per year, MPY. Default of 10 MPY.
-    :return:    imperfection growth rate in mm/yr
-    """
-    return (mpy/1000.0)*25.4
 
-#half-life
-def half_life(d,start,end):
-    '''
-
-    :param d:       feature property (in any units), at the time of measuring
-    :param start:   start year, datetime.date dataframe object, or integer year.
-    :param end:     end year, datetime.date dataframe object, or integer year.
-    :return:        returns the half-life growth rate based on the input feature units
-    '''
-    try:
-        return (2*d)/((end-start).dt.days.values/365.25)
-    except AttributeError:
-        return (2*d)/(end-start)
-
-#2.2%WT
-def pct_wt(wt):
-    """
-
-    :param wt:  returns the imperfection growth rate as 2.2% of the wall thickness, *
-    :return:
-    """
-    return 0.0220*wt
 
 def modified_b31g(od, wt, s, fL, fD, units="SI"):
     """
@@ -335,58 +306,6 @@ class StatisticalPOE:
         temp_df = pd.DataFrame(temp_dict)
         temp_df.to_csv(abspath(join(dirname(__file__), 'inputs_POE_template.csv')), index=False)
         return None
-
-    def build_df(self, od_i, wt_mm, grade_mpa, maop_kpa, installdate, ILIdate, pdf, lengthmm, pmax_kpa, pmin_kpa, aesc, create=True, **kwargs):
-        """Allows user to build a dataframe right in the prompt to be used as the input data. If the create flaf is set to False,
-            then a df keyword can be specified, and the entry is appended to the dataframe df
-        Arguments:
-            od_i {float} -- outside diameter in inches
-            wt_mm {float} -- wall thickness in mm
-            grade_mpa {float} -- grade in MPa
-            maop_kpa {float} -- maximum allowable operating pressure in kPa
-            installdate {datetime.date} -- installation date
-            ILIdate {datetime.date} -- ILI survey date
-            pdf {float} -- peak depth fraction
-            lengthmm {float} -- length in mm
-            pmax_kpa {float} -- maximum pressure in stress cycle in kPa
-            pmin_kpa {float} -- minimum pressure in stress cycle in kPa
-            aesc {float} -- annual equivalent stress cycles
-
-        Keyword Arguments:
-            create {bool} -- setting this to True will return a new dataframe, setting it to False will append to a dataframe kwarg 'df' (default: {True})
-
-        Returns:
-            [pandas.DataFrame] -- dataframe containing the entry
-        """        
-        if create:
-            temp_dict = dict(OD_inch=[od_i],
-                            WT_mm=[wt_mm],
-                            grade_MPa=[grade_mpa],
-                            install_date=[installdate],
-                            MAOP_kPa=[maop_kpa],
-                            ILIRStartDate=[ILIdate],
-                            depth_fraction=[pdf],
-                            length_mm=[lengthmm],
-                            PMax_kPa=[pmax_kpa],
-                            PMin_kPa=[pmin_kpa],
-                            AESC=[aesc]
-                            )
-                
-            return pd.DataFrame(temp_dict)
-        else:
-            temp_df = pd.DataFrame(dict(OD_inch=[od_i],
-                            WT_mm=[wt_mm],
-                            grade_MPa=[grade_mpa],
-                            install_date=[installdate],
-                            MAOP_kPa=[maop_kpa],
-                            ILIRStartDate=[ILIdate],
-                            depth_fraction=[pdf],
-                            length_mm=[lengthmm],
-                            PMax_kPa=[pmax_kpa],
-                            PMin_kPa=[pmin_kpa],
-                            AESC=[aesc]
-                            ))
-            return kwargs['df'].append(temp_df)
 
     def set_model(self):
         """method used to specify which model to be ran
@@ -1645,7 +1564,7 @@ if __name__ == '__main__':
 
     corr = MonteCarlo(config=config)
     
-    corr.get_data_from_csv('sample_of_inputs.csv')
+    corr.get_data_from_csv(r'D:/User/OneDrive/Projects/Python/from work/Calculators/sample_of_inputs.csv')
     corr.run()
     print(corr.result)
 
